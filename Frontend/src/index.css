@@ -1,0 +1,90 @@
+/* src/index.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Sora', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e4a7a; border-radius: 4px; }
+
+/* Animations */
+@keyframes fadeIn       { from{opacity:0} to{opacity:1} }
+@keyframes slideDown    { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideUp      { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideLeft    { from{opacity:0;transform:translateX(-16px)} to{opacity:1;transform:translateX(0)} }
+@keyframes pulse        { 0%,100%{opacity:1} 50%{opacity:0.3} }
+@keyframes spin         { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+@keyframes ticker       { 0%{transform:translateX(100%)} 100%{transform:translateX(-300%)} }
+@keyframes shimmer      { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+@keyframes rowIn        { from{opacity:0;transform:translateX(-14px)} to{opacity:1;transform:translateX(0)} }
+@keyframes scaleIn      { from{opacity:0;transform:scale(0.96)} to{opacity:1;transform:scale(1)} }
+
+.animate-fadeIn   { animation: fadeIn   0.35s ease both; }
+.animate-slideDown { animation: slideDown 0.35s ease both; }
+.animate-slideUp  { animation: slideUp  0.35s ease both; }
+.animate-scaleIn  { animation: scaleIn  0.3s ease both; }
+.animate-rowIn    { animation: rowIn    0.4s ease both; }
+
+/* Spin utility */
+.spin { animation: spin 0.8s linear infinite; }
+
+/* Blink utility */
+.blink { animation: pulse 1.4s ease-in-out infinite; }
+
+/* Print */
+@media print {
+  nav, footer, .no-print { display: none !important; }
+  .card { page-break-inside: avoid; }
+}
+
+/* Responsive layout */
+@media (max-width: 1024px) {
+  /* Adjust sidebar width on tablets */
+  [style*="gridTemplateColumns"] {
+    grid-template-columns: 240px 1fr !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* Stack layout on mobile */
+  [style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  
+  /* Hide sidebar on mobile, but allow scrolling */
+  div[style*="position: sticky"] {
+    position: static !important;
+    max-height: 400px;
+  }
+}
+
+@media (max-width: 768px) {
+  [style*="gridTemplateColumns: '280px 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+  
+  [style*="gridTemplateColumns: 'repeat(4,1fr)'"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  [style*="gridTemplateColumns: 'repeat(3,1fr)'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  [style*="gridTemplateColumns:"] {
+    grid-template-columns: 1fr !important;
+  }
+}
