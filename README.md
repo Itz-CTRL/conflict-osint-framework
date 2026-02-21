@@ -25,119 +25,96 @@ soko-osint/
 │       ├── Header.jsx
 │       ├── Ticker.jsx
 │       ├── Dashboard.jsx
-│       ├── CasePage.jsx
-│       ├── ThemeButton.jsx
-│       └── UI.jsx
-├── public/
-│   └── index.html
-└── package.json
+## SOKO AERIAL OSINT Platform
+
+A full-stack OSINT investigation platform (Flask backend + React frontend).
+
+---
+
+**Repository layout (actual)**
+
+```
+soko-osint/
+├── backend/               # Flask API (Python)
+│   ├── app.py
+│   ├── analyzer.py
+│   ├── database.py
+│   ├── scraper.py
+│   ├── network_builder.py
+│   ├── requirements.txt
+│   └── Pipfile
+├── Frontend/              # React app (create-react-app)
+│   ├── package.json
+│   ├── public/
+│   │   └── index.html
+│   └── src/
+│       ├── App.jsx
+│       ├── index.js
+│       ├── index.css
+│       ├── themes.js
+│       ├── components/
+│       └── utils/
+└── README.md
 ```
 
 ---
 
-## Prerequisites
+## Requirements
 
-- **Python 3.9+** — https://python.org/downloads
-- **Node.js 18+** — https://nodejs.org
+- Python 3.9+ (backend)
+- Node.js 18+ and npm (frontend)
+
+On Linux the instructions below assume a POSIX shell (bash/zsh).
 
 ---
 
-## Setup & Run
+## Quick start (Linux / macOS)
 
-### ── CMD (Windows Command Prompt) ──────────────────────
+1. Backend (API):
 
-```cmd
-REM 1. Open CMD, navigate to the project root
-cd path\to\soko-osint
-
-REM 2. Set up and run the backend
+```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python app.py
+```
 
-REM 3. Open a SECOND CMD window, go back to root
-cd path\to\soko-osint
+This starts the Flask backend on http://127.0.0.1:5000. Health: http://127.0.0.1:5000/api/health
+
+2. Frontend (React):
+
+```bash
+cd ../Frontend
 npm install
 npm start
 ```
 
-### ── PowerShell (Windows) ──────────────────────────────
+The React dev server starts on http://localhost:3000 and is proxied to the backend (see `Frontend/package.json`).
 
-```powershell
-# 1. Navigate to project root
-cd C:\path\to\soko-osint
-
-# 2. Backend - run in THIS window
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python app.py
-
-# 3. Frontend - open a NEW PowerShell window
-cd C:\path\to\soko-osint
-npm install
-npm start
-```
-
-> **PowerShell Execution Policy Fix** (if you get an error on Activate.ps1):
-> ```powershell
-> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-> ```
-
-### ── VS Code (Recommended) ────────────────────────────
-
-1. Open the `soko-osint` folder in VS Code (`File → Open Folder`)
-2. Open the **integrated terminal** (`Ctrl+`` ` ``)
-3. **Terminal 1 — Backend:**
-   ```bash
-   cd backend
-   python -m venv venv
-   # Windows:
-   venv\Scripts\activate
-   # Mac/Linux:
-   source venv/bin/activate
-
-   pip install -r requirements.txt
-   python app.py
-   ```
-4. Click the **+** icon in the terminal panel to open **Terminal 2 — Frontend:**
-   ```bash
-   npm install
-   npm start
-   ```
-5. Browser will auto-open at **http://localhost:3000**
+Notes:
+- The backend also includes a `Pipfile` if you prefer `pipenv`.
+- `Frontend/package.json` sets a proxy to `http://127.0.0.1:5000` for API calls.
 
 ---
 
-## URLs
+## VS Code (recommended)
 
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:3000 |
-| Backend API | http://127.0.0.1:5000 |
-| Health check | http://127.0.0.1:5000/api/health |
+1. Open the project folder in VS Code.
+2. Open an integrated terminal and run the backend steps in one terminal and the frontend steps in another.
 
 ---
 
-## Features
+## Endpoints (examples)
 
-- **Username investigation** across 10 platforms simultaneously
-- **Behavioral analysis** with risk scoring (LOW / MEDIUM / HIGH)
-- **Keyword detection** for conflict-related terms
-- **Platform presence** map with profile links and avatars
-- **Reddit & GitHub** deep data via public APIs
-- **4 themes**: Dark Intel, Light Ops, Red Alert, Ghost Protocol
-- **Draggable theme switcher** — drag anywhere on screen
-- **Persistent theme** across page reloads
-- **Responsive** layout (desktop + mobile)
+- Frontend: http://localhost:3000
+- Backend API: http://127.0.0.1:5000
+- Health check: http://127.0.0.1:5000/api/health
 
 ---
 
-## Legal & Ethics
+## Notes & Ethics
 
-This platform uses **public data only**. No private APIs, no authentication bypassing.
-All findings are for educational and research purposes.
-Confirmed threats should be handed over to appropriate authorities.
+Use this project only with public data and for lawful, ethical research. Do not attempt to access private accounts, bypass authentication, or otherwise violate platform terms of service.
+
+If you'd like, I can also add a short development checklist or startup scripts to simplify running both services concurrently.
