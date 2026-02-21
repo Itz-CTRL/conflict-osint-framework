@@ -43,7 +43,7 @@ soko-osint/
 │   ├── network_builder.py
 │   ├── requirements.txt
 │   └── Pipfile
-├── Frontend/              # React app (create-react-app)
+├── frontend/              # React app (create-react-app)
 │   ├── package.json
 │   ├── public/
 │   │   └── index.html
@@ -85,16 +85,16 @@ This starts the Flask backend on http://127.0.0.1:5000. Health: http://127.0.0.1
 2. Frontend (React):
 
 ```bash
-cd ../Frontend
+cd ../frontend
 npm install
 npm start
 ```
 
-The React dev server starts on http://localhost:3000 and is proxied to the backend (see `Frontend/package.json`).
+The React dev server starts on http://localhost:3000 and is proxied to the backend (see `frontend/package.json`).
 
 Notes:
 - The backend also includes a `Pipfile` if you prefer `pipenv`.
-- `Frontend/package.json` sets a proxy to `http://127.0.0.1:5000` for API calls.
+- `frontend/package.json` sets a proxy to `http://127.0.0.1:5000` for API calls.
 
 ---
 
