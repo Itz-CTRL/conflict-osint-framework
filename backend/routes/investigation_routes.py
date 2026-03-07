@@ -609,16 +609,22 @@ def list_investigations():
             page=page, per_page=limit, error_out=False
         )
         
-        investigations = [
-            {
+        investigations = []
+        for inv in paginated.items:
+            try:
+                # Use model's primary_entity and compute risk level from analyzer
+                risk_level = analyzer.get_risk_category(inv.risk_score) if hasattr(analyzer, 'get_risk_category') else 'UNKNOWN'
+            except Exception:
+                risk_level = 'UNKNOWN'
+
+            investigations.append({
                 'id': inv.id,
-                'username': inv.username,
+                'username': getattr(inv, 'primary_entity', None),
                 'status': inv.status,
                 'risk_score': inv.risk_score,
-                'risk_level': inv.risk_level,
-                'created_at': inv.created_at.isoformat()
-            } for inv in paginated.items
-        ]
+                'risk_level': risk_level,
+                'created_at': inv.created_at.isoformat() if inv.created_at else None
+            })
         
         return jsonify({
             'status': 'success',
@@ -732,11 +738,12 @@ def _light_scan(investigation):
                         finding = Finding(
                             id=str(uuid.uuid4()),
                             investigation_id=investigation.id,
+                            finding_type='platform',
                             platform=platform_name,
-                            username=username,
-                            profile_url=url,
-                            found=True,
-                            data=json.dumps(result)
+                            found=bool(result.get('found')),
+                            source=url,
+                            confidence=float(result.get('confidence', 0)),
+                            data=result if isinstance(result, dict) else json.loads(result) if isinstance(result, str) else {}
                         )
                         db.session.add(finding)
                         db.session.flush()  # Flush but don't commit yet
@@ -930,11 +937,12 @@ def _deep_scan(investigation):
                 finding = Finding(
                     id=str(uuid.uuid4()),
                     investigation_id=investigation.id,
+                    finding_type='platform',
                     platform='Reddit',
-                    username=investigation.primary_entity,
-                    profile_url=f"https://reddit.com/user/{investigation.primary_entity}",
                     found=True,
-                    data=json.dumps(deep_data['reddit'])
+                    source=f"https://reddit.com/user/{investigation.primary_entity}",
+                    confidence=float(deep_data['reddit'].get('confidence', 0)) if isinstance(deep_data['reddit'], dict) else 0,
+                    data=deep_data['reddit'] if isinstance(deep_data['reddit'], dict) else {}
                 )
                 db.session.add(finding)
             
@@ -942,11 +950,12 @@ def _deep_scan(investigation):
                 finding = Finding(
                     id=str(uuid.uuid4()),
                     investigation_id=investigation.id,
+                    finding_type='platform',
                     platform='GitHub',
-                    username=investigation.primary_entity,
-                    profile_url=f"https://github.com/{investigation.primary_entity}",
                     found=True,
-                    data=json.dumps(deep_data['github'])
+                    source=f"https://github.com/{investigation.primary_entity}",
+                    confidence=float(deep_data['github'].get('confidence', 0)) if isinstance(deep_data['github'], dict) else 0,
+                    data=deep_data['github'] if isinstance(deep_data['github'], dict) else {}
                 )
                 db.session.add(finding)
             

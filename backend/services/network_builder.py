@@ -185,6 +185,7 @@ class NetworkGraphBuilder:
                     'avg_degree': stats.get('avg_degree', 0),
                     'created_at': datetime.utcnow().isoformat(),
                 },
+                'statistics': stats,
                 'central_node': {
                     'id': central_node_id if 'central_node_id' in locals() else None,
                     'label': username,
@@ -572,6 +573,7 @@ class NetworkGraphBuilder:
                 'avg_clustering': round(avg_clustering, 3),
                 'node_count': self.graph.number_of_nodes(),
                 'edge_count': self.graph.number_of_edges(),
+                'is_connected': nx.is_connected(self.graph) if self.graph.number_of_nodes() > 0 and nx.is_connected(self.graph) is not None else False,
             }
         except Exception as e:
             logger.warning(f"Error calculating statistics: {str(e)}")
@@ -673,4 +675,17 @@ class NetworkGraphBuilder:
         Returns:
             GraphML XML string
         """
-        return '\n'.join(nx.generate_graphml(self.graph))
+        try:
+            if hasattr(nx, 'generate_graphml'):
+                return '\n'.join(nx.generate_graphml(self.graph))
+            if hasattr(nx, 'to_graphml'):
+                return nx.to_graphml(self.graph)
+            if hasattr(nx, 'write_graphml'):
+                import io
+                buf = io.StringIO()
+                nx.write_graphml(self.graph, buf)
+                return buf.getvalue()
+            return '<?xml version="1.0" encoding="utf-8"?>\n<graphml></graphml>'
+        except Exception as e:
+            logger.warning(f"GraphML export failed: {e}")
+            return '<?xml version="1.0" encoding="utf-8"?>\n<graphml></graphml>'

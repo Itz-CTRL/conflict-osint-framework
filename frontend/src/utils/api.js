@@ -78,6 +78,13 @@ export const api = {
       }),
     }),
 
+  /** POST /api/phone/scan → simplified single-button GhostTR-style scan */
+  phoneScan: (phone) =>
+    apiFetch('/api/phone/scan', {
+      method: 'POST',
+      body: JSON.stringify({ phone_number: phone }),
+    }),
+
   /** POST /api/phone/batch → { status, data: [...], summary } */
   phoneBatch: (phones) =>
     apiFetch('/api/phone/batch', {

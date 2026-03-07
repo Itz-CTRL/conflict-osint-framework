@@ -23,7 +23,7 @@ export default function PhoneLookup({ theme }) {
     setResult(null);
     setLoading(true);
     try {
-      const res = await api.phoneLookup(num);
+      const res = await api.phoneScan(num);
       setResult(res.data || {});
       addPhoneLookup(res.data || {});
     } catch (e) {
@@ -96,7 +96,7 @@ export default function PhoneLookup({ theme }) {
               transition: 'all 0.2s',
             }}
           >
-            {loading ? <><Spinner size={16} /> Scanning...</> : '📡 Lookup'}
+            {loading ? <><Spinner size={16} /> Scanning...</> : '📡 Scan'}
           </button>
         </div>
 

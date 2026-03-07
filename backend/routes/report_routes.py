@@ -310,8 +310,15 @@ def _build_text_report(investigation):
         report.append("FINDINGS")
         report.append("-" * 40)
         for finding in findings:
+            try:
+                finding_username = None
+                if finding.data and isinstance(finding.data, dict):
+                    finding_username = finding.data.get('username') or finding.data.get('user')
+            except Exception:
+                finding_username = None
+
             report.append(f"Platform: {finding.platform or 'N/A'}")
-            report.append(f"  Username: {finding.username}")
+            report.append(f"  Username: {finding_username or 'N/A'}")
             report.append(f"  Found: {finding.found}")
             report.append("")
     

@@ -174,10 +174,21 @@ class Validator:
                 except phonenumbers.NumberParseException:
                     pass
             
-            # Try common regions (handles 024XXXXXXX for Ghana format)
+            # Try common regions (handles local formats like 024XXXXXXX for Ghana)
             common_regions = ['GH', 'US', 'GB', 'IN', 'BR', 'RU', 'DE', 'FR', 'ID', 'CN', 'JP']
             if country_code:
+                # ensure country_code is first preference
                 common_regions.insert(0, country_code)
+
+            # If the number looks like a local format (starts with 0), prioritize likely local countries
+            if phone_number.startswith('0'):
+                # Put Ghana first for regional patterns if available
+                if 'GH' in COUNTRY_CODES and 'GH' in common_regions:
+                    try:
+                        common_regions.remove('GH')
+                        common_regions.insert(0, 'GH')
+                    except ValueError:
+                        pass
             
             for region in common_regions:
                 try:

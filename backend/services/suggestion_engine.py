@@ -62,13 +62,16 @@ class SuggestionEngine:
             username_counts = {}
             
             for inv in all_investigations:
-                # Handle different Investigation models
+                # Prefer primary_entity on Investigation model
                 username = None
-                if hasattr(inv, 'username'):
-                    username = inv.username
-                elif hasattr(inv, 'primary_entity') and hasattr(inv, 'case_type'):
-                    if inv.case_type == 'username':
+                try:
+                    if getattr(inv, 'case_type', None) == 'username' and getattr(inv, 'primary_entity', None):
                         username = inv.primary_entity
+                    else:
+                        # Fallback for legacy attribute
+                        username = getattr(inv, 'primary_entity', None) or getattr(inv, 'username', None)
+                except Exception:
+                    username = getattr(inv, 'primary_entity', None) or getattr(inv, 'username', None)
                 
                 if username:
                     username_lower = username.lower()
@@ -128,13 +131,11 @@ class SuggestionEngine:
             
             suggestions = []
             for inv in recent_investigations:
-                username = None
-                if hasattr(inv, 'username'):
-                    username = inv.username
-                elif hasattr(inv, 'primary_entity') and hasattr(inv, 'case_type'):
-                    if inv.case_type == 'username':
-                        username = inv.primary_entity
-                
+                try:
+                    username = inv.primary_entity if getattr(inv, 'case_type', None) == 'username' else getattr(inv, 'primary_entity', None) or getattr(inv, 'username', None)
+                except Exception:
+                    username = getattr(inv, 'primary_entity', None) or getattr(inv, 'username', None)
+
                 if username:
                     suggestions.append({
                         'username': username,

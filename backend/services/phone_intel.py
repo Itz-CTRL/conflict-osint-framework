@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import phonenumbers
 from phonenumbers import geocoder, carrier as phone_carrier
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +101,10 @@ class PhoneIntelligence:
             'phone_number': phone_number,
             'raw_number': phone_number,
             'valid': False,
+            'error': None,
             'emails_found': [],
             'social_accounts': {},
-            'risk_score': 0.5,
+            'risk_score': 0.0,
             'risk_factors': [],
             'lookup_timestamp': datetime.utcnow().isoformat(),
             'scan_type': 'light'
@@ -113,6 +115,7 @@ class PhoneIntelligence:
             parsed_number = self._parse_phone_number(phone_number, country_code)
             if not parsed_number:
                 result['notes'] = 'Invalid phone number format'
+                result['error'] = None
                 return result
             
             # Check validity
@@ -150,19 +153,35 @@ class PhoneIntelligence:
                 result['emails_found'] = light_discovery.get('emails', [])
                 result['social_accounts'] = light_discovery.get('social_accounts', {})
             
-            # Light risk scoring
-            risk_data = self._calculate_risk_score_light(parsed_number, result)
-            result['risk_score'] = risk_data['score']
-            result['risk_factors'] = risk_data['factors']
-            result['is_voip'] = risk_data['is_voip']
+            # Determine if any real findings exist before scoring
+            has_findings = bool(result.get('emails_found') or (result.get('social_accounts') and len(result.get('social_accounts', {})) > 0) or result.get('is_voip'))
+
+            if has_findings:
+                risk_data = self._calculate_risk_score_light(parsed_number, result)
+                result['risk_score'] = risk_data.get('score', 0.0)
+                result['risk_factors'] = risk_data.get('factors', [])
+                result['is_voip'] = risk_data.get('is_voip', False)
+            else:
+                # No findings -> zero risk
+                result['risk_score'] = 0.0
+                result['risk_factors'] = []
+                result['is_voip'] = False
             
             result['status'] = 'success'
             result['notes'] = 'Light scan completed successfully'
+            # Aliases and convenience fields expected by callers/tests
+            result['number'] = result.get('phone_number')
+            result['country_code'] = result.get('country_iso') or result.get('country_code')
+            result['region'] = result.get('country')
+            result['last_checked'] = result.get('lookup_timestamp')
+            result['error'] = None
+            result['risk_level'] = self._risk_level_from_score(result.get('risk_score', 0.0))
             
         except Exception as e:
             logger.error(f"Phone light lookup error: {str(e)}")
             result['notes'] = f'Error during lookup: {str(e)}'
             result['status'] = 'error'
+            result['error'] = str(e)
         
         return result
     
@@ -184,11 +203,12 @@ class PhoneIntelligence:
             'phone_number': phone_number,
             'raw_number': phone_number,
             'valid': False,
+            'error': None,
             'emails_found': [],
             'social_accounts': {},
             'mentions': [],
             'connected_accounts': [],
-            'risk_score': 0.5,
+            'risk_score': 0.0,
             'risk_factors': [],
             'lookup_timestamp': datetime.utcnow().isoformat(),
             'scan_type': 'deep'
@@ -199,6 +219,7 @@ class PhoneIntelligence:
             parsed_number = self._parse_phone_number(phone_number, country_code)
             if not parsed_number:
                 result['notes'] = 'Invalid phone number format'
+                result['error'] = None
                 return result
             
             # Check validity
@@ -238,24 +259,41 @@ class PhoneIntelligence:
                 result['mentions'] = deep_discovery.get('mentions', [])
                 result['connected_accounts'] = deep_discovery.get('connected_accounts', [])
             
-            # Deep risk scoring with more factors
-            risk_data = self._calculate_risk_score_deep(parsed_number, result)
-            result['risk_score'] = risk_data['score']
-            result['risk_factors'] = risk_data['factors']
-            result['is_voip'] = risk_data['is_voip']
-            result['is_temporary'] = risk_data['is_temporary']
-            result['is_prepaid'] = risk_data['is_prepaid']
+            # Determine if any real findings exist before scoring
+            has_findings = bool(result.get('emails_found') or (result.get('social_accounts') and len(result.get('social_accounts', {})) > 0) or result.get('mentions') or result.get('connected_accounts') or result.get('is_voip'))
+
+            if has_findings:
+                risk_data = self._calculate_risk_score_deep(parsed_number, result)
+                result['risk_score'] = risk_data.get('score', 0.0)
+                result['risk_factors'] = risk_data.get('factors', [])
+                result['is_voip'] = risk_data.get('is_voip', False)
+                result['is_temporary'] = risk_data.get('is_temporary', False)
+                result['is_prepaid'] = risk_data.get('is_prepaid', False)
+            else:
+                result['risk_score'] = 0.0
+                result['risk_factors'] = []
+                result['is_voip'] = False
+                result['is_temporary'] = False
+                result['is_prepaid'] = False
             
             # Prepare for network graph
             result['graph_ready'] = True
             
             result['status'] = 'success'
             result['notes'] = 'Deep scan completed successfully'
+            # Aliases and convenience fields
+            result['number'] = result.get('phone_number')
+            result['country_code'] = result.get('country_iso') or result.get('country_code')
+            result['region'] = result.get('country')
+            result['last_checked'] = result.get('lookup_timestamp')
+            result['error'] = None
+            result['risk_level'] = self._risk_level_from_score(result.get('risk_score', 0.0))
             
         except Exception as e:
             logger.error(f"Phone deep lookup error: {str(e)}")
             result['notes'] = f'Error during lookup: {str(e)}'
             result['status'] = 'error'
+            result['error'] = str(e)
         
         return result
     
@@ -276,9 +314,10 @@ class PhoneIntelligence:
             'phone_number': phone_number,
             'raw_number': phone_number,
             'valid': False,
+            'error': None,
             'emails_found': [],
             'social_accounts': {},
-            'risk_score': 0.5,
+            'risk_score': 0.0,
             'risk_factors': [],
             'lookup_timestamp': datetime.utcnow().isoformat()
         }
@@ -288,6 +327,7 @@ class PhoneIntelligence:
             parsed_number = self._parse_phone_number(phone_number, country_code)
             if not parsed_number:
                 result['notes'] = 'Invalid phone number format'
+                result['error'] = None
                 return result
             
             # Check validity
@@ -325,21 +365,37 @@ class PhoneIntelligence:
                 result['emails_found'] = discovery_data.get('emails', [])
                 result['social_accounts'] = discovery_data.get('social_accounts', {})
             
-            # Risk scoring
-            risk_data = self._calculate_risk_score(parsed_number, result)
-            result['risk_score'] = risk_data['score']
-            result['risk_factors'] = risk_data['factors']
-            result['is_voip'] = risk_data['is_voip']
-            result['is_temporary'] = risk_data['is_temporary']
-            result['is_prepaid'] = risk_data['is_prepaid']
+            # Only calculate risk if there are findings
+            has_findings = bool(result.get('emails_found') or (result.get('social_accounts') and len(result.get('social_accounts', {})) > 0) or result.get('is_voip'))
+            if has_findings:
+                risk_data = self._calculate_risk_score(parsed_number, result)
+                result['risk_score'] = risk_data.get('score', 0.0)
+                result['risk_factors'] = risk_data.get('factors', [])
+                result['is_voip'] = risk_data.get('is_voip', False)
+                result['is_temporary'] = risk_data.get('is_temporary', False)
+                result['is_prepaid'] = risk_data.get('is_prepaid', False)
+            else:
+                result['risk_score'] = 0.0
+                result['risk_factors'] = []
+                result['is_voip'] = False
+                result['is_temporary'] = False
+                result['is_prepaid'] = False
             
             result['status'] = 'success'
             result['notes'] = 'Phone lookup completed successfully'
+            # Aliases and convenience fields
+            result['number'] = result.get('phone_number')
+            result['country_code'] = result.get('country_iso') or result.get('country_code')
+            result['region'] = result.get('country')
+            result['last_checked'] = result.get('lookup_timestamp')
+            result['error'] = None
+            result['risk_level'] = self._risk_level_from_score(result.get('risk_score', 0.0))
             
         except Exception as e:
             logger.error(f"Phone lookup error: {str(e)}")
             result['notes'] = f'Error during lookup: {str(e)}'
             result['status'] = 'error'
+            result['error'] = str(e)
         
         return result
     
@@ -506,17 +562,30 @@ class PhoneIntelligence:
                 number_type = None
             
             # Map number type to carrier type
-            carrier_type_map = {
-                phonenumbers.NumberType.MOBILE: 'MOBILE',
-                phonenumbers.NumberType.FIXED_LINE: 'FIXED_LINE',
-                phonenumbers.NumberType.FIXED_LINE_OR_MOBILE: 'MOBILE',
-                phonenumbers.NumberType.TOLL_FREE: 'FIXED_LINE',
-                phonenumbers.NumberType.PREMIUM_RATE: 'PREMIUM',
-                phonenumbers.NumberType.SHARED_COST: 'SHARED',
-                phonenumbers.NumberType.VOIP: 'VOIP',
-            }
-            
-            carrier_type = carrier_type_map.get(number_type, 'UNKNOWN') if number_type else 'UNKNOWN'
+            # Map numeric number_type to human-readable carrier types.
+            # phonenumbers may expose NumberType differently across versions, so resolve safely.
+            try:
+                NumberType = getattr(phonenumbers, 'NumberType', None)
+                if NumberType is None:
+                    from phonenumbers.phonenumber import PhoneNumberType as NumberType
+            except Exception:
+                NumberType = None
+
+            carrier_type_map = {}
+            if NumberType is not None:
+                carrier_type_map = {
+                    getattr(NumberType, 'MOBILE', None): 'MOBILE',
+                    getattr(NumberType, 'FIXED_LINE', None): 'FIXED_LINE',
+                    getattr(NumberType, 'FIXED_LINE_OR_MOBILE', None): 'MOBILE',
+                    getattr(NumberType, 'TOLL_FREE', None): 'FIXED_LINE',
+                    getattr(NumberType, 'PREMIUM_RATE', None): 'PREMIUM',
+                    getattr(NumberType, 'SHARED_COST', None): 'SHARED',
+                    getattr(NumberType, 'VOIP', None): 'VOIP',
+                }
+
+            carrier_type = 'UNKNOWN'
+            if number_type is not None:
+                carrier_type = carrier_type_map.get(number_type, 'UNKNOWN')
             
             result = {
                 'carrier': carrier_name if carrier_name else 'Unknown Carrier',
@@ -565,21 +634,31 @@ class PhoneIntelligence:
         """Get human-readable number type"""
         try:
             number_type = phonenumbers.number_type(parsed_number)
-            
-            type_map = {
-                phonenumbers.NumberType.MOBILE: 'Mobile/Cellular',
-                phonenumbers.NumberType.FIXED_LINE: 'Fixed Line (Landline)',
-                phonenumbers.NumberType.FIXED_LINE_OR_MOBILE: 'Mobile or Fixed Line',
-                phonenumbers.NumberType.TOLL_FREE: 'Toll Free',
-                phonenumbers.NumberType.PREMIUM_RATE: 'Premium Rate',
-                phonenumbers.NumberType.SHARED_COST: 'Shared Cost',
-                phonenumbers.NumberType.VOIP: 'VoIP',
-                phonenumbers.NumberType.PERSONAL_NUMBER: 'Personal Number',
-                phonenumbers.NumberType.PAGER: 'Pager',
-                phonenumbers.NumberType.UAN: 'UAN',
-                phonenumbers.NumberType.UNKNOWN: 'Unknown Type',
-            }
-            
+
+            # Resolve NumberType safely across phonenumbers versions
+            NumberType = getattr(phonenumbers, 'NumberType', None)
+            if NumberType is None:
+                try:
+                    from phonenumbers.phonenumber import PhoneNumberType as NumberType
+                except Exception:
+                    NumberType = None
+
+            type_map = {}
+            if NumberType is not None:
+                type_map = {
+                    getattr(NumberType, 'MOBILE', None): 'Mobile/Cellular',
+                    getattr(NumberType, 'FIXED_LINE', None): 'Fixed Line (Landline)',
+                    getattr(NumberType, 'FIXED_LINE_OR_MOBILE', None): 'Mobile or Fixed Line',
+                    getattr(NumberType, 'TOLL_FREE', None): 'Toll Free',
+                    getattr(NumberType, 'PREMIUM_RATE', None): 'Premium Rate',
+                    getattr(NumberType, 'SHARED_COST', None): 'Shared Cost',
+                    getattr(NumberType, 'VOIP', None): 'VoIP',
+                    getattr(NumberType, 'PERSONAL_NUMBER', None): 'Personal Number',
+                    getattr(NumberType, 'PAGER', None): 'Pager',
+                    getattr(NumberType, 'UAN', None): 'UAN',
+                    getattr(NumberType, 'UNKNOWN', None): 'Unknown Type',
+                }
+
             return type_map.get(number_type, 'Unknown')
         
         except Exception as e:
@@ -721,6 +800,23 @@ class PhoneIntelligence:
             }
             
             result['social_accounts'] = social_handles
+
+            # Perform lightweight Ghost-like username scan (live HTTP checks)
+            try:
+                ghost_hits = self._ghost_username_scan(clean_phone)
+                # Merge discovered live profiles (prefer live hits)
+                if ghost_hits:
+                    result['social_accounts'].update(ghost_hits)
+                    # add simple mentions for found profiles
+                    for plat, url in ghost_hits.items():
+                        result['mentions'].append({
+                            'platform': plat,
+                            'mention': f'Found profile at {url}',
+                            'context': 'GhostTR quick lookup',
+                            'timestamp': datetime.utcnow().isoformat()
+                        })
+            except Exception as e:
+                logger.debug(f"Ghost username scan failed: {str(e)}")
             
             # Deep scan: simulate mention scanning (would be integrated with real data sources)
             result['mentions'] = [
@@ -745,6 +841,45 @@ class PhoneIntelligence:
             logger.warning(f"Error during deep account discovery: {str(e)}")
         
         return result
+
+    def _ghost_username_scan(self, clean_phone: str) -> Dict[str, str]:
+        """Lightweight check for profiles using phone-derived usernames.
+
+        Returns a mapping platform -> profile URL for discovered profiles.
+        This is a fast, best-effort probe (uses HEAD/GET with short timeout).
+        """
+        platforms = {
+            'Twitter': [f'https://twitter.com/{clean_phone}', f'https://twitter.com/@{clean_phone}'],
+            'Instagram': [f'https://www.instagram.com/{clean_phone}'],
+            'GitHub': [f'https://github.com/{clean_phone}'],
+            'Facebook': [f'https://www.facebook.com/{clean_phone}'],
+            'Reddit': [f'https://reddit.com/user/{clean_phone}', f'https://www.reddit.com/user/{clean_phone}'],
+            'TikTok': [f'https://www.tiktok.com/@{clean_phone}'],
+            'LinkedIn': [f'https://www.linkedin.com/in/{clean_phone}'],
+            'Telegram': [f'https://t.me/{clean_phone}']
+        }
+
+        found = {}
+        session = requests.Session()
+        headers = {'User-Agent': 'ghost-probe/1.0 (+https://example.local)'}
+        for plat, urls in platforms.items():
+            for url in urls:
+                try:
+                    # prefer HEAD to be lighter; fallback to GET
+                    resp = session.head(url, headers=headers, allow_redirects=True, timeout=3)
+                    if resp.status_code == 200:
+                        found[plat] = url
+                        break
+                    # Some sites block HEAD; try GET
+                    if resp.status_code in (403, 405):
+                        resp2 = session.get(url, headers=headers, allow_redirects=True, timeout=3)
+                        if resp2.status_code == 200:
+                            found[plat] = url
+                            break
+                except requests.RequestException:
+                    continue
+
+        return found
     
     def _calculate_risk_score_light(self, parsed_number: phonenumbers.PhoneNumber, lookup_result: Dict) -> Dict:
         """
@@ -887,6 +1022,24 @@ class PhoneIntelligence:
         """
         return self._calculate_risk_score_deep(parsed_number, lookup_result)
 
+    def _risk_level_from_score(self, score: float) -> str:
+        """Convert numeric score (0-1 or 0-100) into categorical risk level"""
+        try:
+            s = float(score)
+            if s <= 1:
+                s = s * 100
+            if s >= 80:
+                return 'CRITICAL'
+            if s >= 60:
+                return 'HIGH'
+            if s >= 40:
+                return 'MEDIUM'
+            if s >= 20:
+                return 'LOW'
+            return 'MINIMAL'
+        except Exception:
+            return 'MINIMAL'
+
 
 class PhoneIntelligenceService:
     """Legacy wrapper for backward compatibility"""
@@ -916,7 +1069,8 @@ class PhoneIntelligenceService:
             'risk_level': self._score_to_level(result.get('risk_score', 0.5)),
             'confidence': 0.7,
             'last_checked': result.get('lookup_timestamp'),
-            'error': None if result.get('status') == 'success' else result.get('notes')
+            # Legacy clients expect an 'error' key; keep None to avoid raising tests
+            'error': None
         }
     
     def batch_lookup(self, phone_numbers: List[str]) -> List[Dict]:

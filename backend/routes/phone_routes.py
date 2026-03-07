@@ -8,6 +8,7 @@ from flask import Blueprint, request, jsonify
 import logging
 from datetime import datetime
 from database import db
+from sqlalchemy.exc import IntegrityError
 from models import PhoneIntelligence as PhoneIntelModel, Investigation
 from services.phone_intel import PhoneIntelligence as PhoneIntelService
 from utils import APIResponse, Validator, generate_case_id
@@ -383,35 +384,64 @@ def lookup_phone():
         # Build consistent response structure - FLAT for frontend compatibility
         # Frontend expects: data.number, data.country, data.carrier, data.social_presence, etc.
         # NOT nested under 'findings'
+        # Determine if any real findings exist
+        has_findings = bool(
+            result.get('emails_found') or
+            (result.get('social_accounts') and len(result.get('social_accounts', {})) > 0) or
+            result.get('mentions') or
+            result.get('connected_accounts') or
+            result.get('is_voip')
+        )
+
+        # Normalize threat level: 0 if no real findings, else scale risk_score to 0-100
+        raw_risk = result.get('risk_score', 0)
+        if not has_findings:
+            threat_level = 0
+        else:
+            try:
+                if isinstance(raw_risk, (int, float)):
+                    threat_level = int(raw_risk * 100) if raw_risk <= 1 else int(raw_risk)
+                else:
+                    threat_level = 0
+            except Exception:
+                threat_level = 0
+
+        # Build social presence list (convert handles to plausible URLs where possible)
+        social_presence = []
+        social_accounts = result.get('social_accounts') or {}
+        for plat, handle in social_accounts.items():
+            try:
+                h = str(handle)
+                if plat.lower() in ['twitter', 'x']:
+                    social_presence.append(f"https://twitter.com/{h.lstrip('@')}")
+                elif plat.lower() == 'instagram':
+                    social_presence.append(f"https://instagram.com/{h.lstrip('@')}")
+                elif plat.lower() == 'facebook':
+                    social_presence.append(f"https://facebook.com/{h.lstrip('@')}")
+                elif plat.lower() == 'github':
+                    social_presence.append(f"https://github.com/{h}")
+                elif plat.lower() == 'reddit':
+                    social_presence.append(f"https://reddit.com/user/{h.lstrip('u/')} ")
+                else:
+                    social_presence.append(h)
+            except Exception:
+                continue
+
         response_data = {
             'status': 'completed',
             'target': normalized_phone,
-            # Flattened phone intelligence fields (for frontend direct access)
             'number': result.get('phone_number', normalized_phone),
-            'phone_number': result.get('phone_number', normalized_phone),
-            'valid': result.get('valid', False),
-            'country': result.get('country'),
-            'country_code': result.get('country_code'),
-            'region': result.get('region'),
+            'country': result.get('country') or result.get('country_iso') or country_iso,
             'carrier': result.get('carrier'),
-            'timezone': result.get('timezone'),
+            'social_presence': social_presence,
+            'emails_found': result.get('emails_found', []),
+            'valid': result.get('valid', False),
             'number_type': result.get('number_type'),
             'confidence': result.get('confidence', 0),
-            'emails_found': result.get('emails_found', []),
-            'social_presence': list(result.get('social_accounts', {}).keys()) if result.get('social_accounts') else [],
-            'social_accounts': result.get('social_accounts', {}),
-            # Additional structure fields
-            'findings': {
-                'phone_number': result.get('phone_number', normalized_phone),
-                'valid': result.get('valid', False),
-                'country': result.get('country'),
-                'carrier': result.get('carrier'),
-                'timezone': result.get('timezone'),
-                'number_type': result.get('number_type'),
-                'emails_found': result.get('emails_found', []),
-                'social_accounts': result.get('social_accounts', {}),
-            },
-            'threat_level': int(result.get('risk_score', 0) * 10) if result.get('risk_score') else 0,
+            'threat_level': threat_level,
+            # Backwards-compatible aliases expected by frontend
+            'risk_score': int(threat_level),
+            'risk_level': result.get('risk_level') or None,
             'network_nodes': [
                 {
                     'id': f"phone_{str(uuid.uuid4())[:8]}",
@@ -428,33 +458,60 @@ def lookup_phone():
         
         logger.info(f"[PHONE_LOOKUP] Completed successfully: case={case_id}, threat_level={response_data['threat_level']}")
         
-        # Try to save but don't fail if DB error
+        # Try to save but don't fail if DB error. On unique constraint, perform an update (upsert).
         try:
             phone_intel_record = PhoneIntelModel(
                 id=str(uuid.uuid4()),
-                phone_number=result.get('phone_number', normalized_phone),
-                country=result.get('country'),
-                carrier=result.get('carrier'),
-                timezone=result.get('timezone'),
-                social_presence=list(result.get('social_accounts', {}).keys()) if result.get('social_accounts') else [],
-                emails_found=result.get('emails_found', []) if result.get('emails_found') else [],
-                risk_score=int(result.get('risk_score', 0) * 100) if isinstance(result.get('risk_score'), (int, float)) else 0,
-                confidence=result.get('confidence', 0),
-                data=result,
+                phone_number=response_data.get('number'),
+                country=response_data.get('country'),
+                country_code=result.get('country_iso') or result.get('country_code'),
+                region=result.get('region'),
+                carrier=response_data.get('carrier'),
+                timezone=response_data.get('timezone'),
+                valid=response_data.get('valid', False),
+                social_presence=response_data.get('social_presence', []),
+                emails_found=response_data.get('emails_found', []),
+                risk_score=int((result.get('risk_score', 0) * 100)) if isinstance(result.get('risk_score'), (int, float)) else 0,
+                confidence=response_data.get('confidence', 0),
                 created_at=datetime.utcnow()
             )
-            
+
             db.session.add(phone_intel_record)
             db.session.commit()
             logger.debug(f"[PHONE_LOOKUP] Saved to database")
+        except IntegrityError as ie:
+            # Phone already exists — update the existing row instead of failing
+            logger.debug(f"[PHONE_LOOKUP] IntegrityError saving phone intel: {ie}")
+            db.session.rollback()
+            try:
+                existing = PhoneIntelModel.query.filter_by(phone_number=response_data.get('number')).first()
+                if existing:
+                    existing.country = response_data.get('country')
+                    existing.country_code = result.get('country_iso') or result.get('country_code')
+                    existing.region = result.get('region')
+                    existing.carrier = response_data.get('carrier')
+                    existing.timezone = response_data.get('timezone')
+                    existing.valid = response_data.get('valid', False)
+                    existing.social_presence = response_data.get('social_presence', [])
+                    existing.emails_found = response_data.get('emails_found', [])
+                    existing.risk_score = int((result.get('risk_score', 0) * 100)) if isinstance(result.get('risk_score'), (int, float)) else 0
+                    existing.confidence = response_data.get('confidence', 0)
+                    existing.updated_at = datetime.utcnow()
+                    db.session.commit()
+                    logger.debug("[PHONE_LOOKUP] Updated existing phone_intelligence record")
+            except Exception as e:
+                logger.warning(f"[PHONE_LOOKUP] DB upsert failed (non-critical): {str(e)}")
+                db.session.rollback()
         except Exception as e:
             logger.warning(f"[PHONE_LOOKUP] DB save failed (non-critical): {str(e)}")
             db.session.rollback()
         
+        # Return 'success' status for compatibility
         response = APIResponse.success(
             case_id,
             data=response_data,
-            risk_score=response_data['threat_level']
+            risk_score=response_data['threat_level'],
+            status='success'
         )
         
         return jsonify(response), 200
@@ -466,8 +523,11 @@ def lookup_phone():
             case_id or f"phone_{str(uuid.uuid4())[:12]}",
             data={
                 'status': 'completed',
-                'target': original_phone or 'unknown',
-                'findings': [],
+                'number': original_phone or 'unknown',
+                'country': None,
+                'carrier': None,
+                'social_presence': [],
+                'emails_found': [],
                 'threat_level': 0,
                 'network_nodes': [],
                 'network_edges': [],
@@ -584,6 +644,79 @@ def infer_country_from_phone():
         return jsonify(APIResponse.error(None, f"Server error: {str(e)}")), 500
 
 
+@phone_bp.route('/scan', methods=['POST'])
+def scan_phone():
+    """Single-button scan endpoint using GhostTR-style quick username probes.
+
+    Request body: { "phone_number": "+123..." }
+    Returns a flat `data` object similar to `/phone/lookup` but focused on quick live profile hits.
+    """
+    try:
+        data = request.get_json() or {}
+        phone_input = data.get('phone_number') or data.get('phone')
+        if not phone_input:
+            return jsonify(APIResponse.error(None, 'phone_number is required')), 400
+
+        # Normalize and validate
+        normalized = Validator.normalize_phone_number(phone_input, None) or phone_input
+        is_valid, err, parsed = Validator.validate_phone(normalized)
+
+        # Prepare defaults
+        country = None
+        country_iso = None
+        carrier_name = None
+        valid_flag = False
+
+        if parsed:
+            try:
+                country = geocoder.country_name_for_number(parsed)
+            except Exception:
+                country = None
+            try:
+                country_iso = phonenumbers.region_code_for_number(parsed)
+            except Exception:
+                country_iso = None
+            try:
+                carrier_name = carrier.name_for_number(parsed, 'en')
+            except Exception:
+                carrier_name = None
+
+            try:
+                valid_flag = bool(phonenumbers.is_valid_number(parsed))
+            except Exception:
+                valid_flag = False
+
+        # Run Ghost-style quick scan using phone-derived username
+        clean_phone = re.sub(r"\D", '', normalized)
+        service = PhoneIntelService()
+        try:
+            ghost_hits = service._ghost_username_scan(clean_phone)
+        except Exception:
+            ghost_hits = {}
+
+        social_presence = list(ghost_hits.values()) if ghost_hits else []
+
+        response_data = {
+            'status': 'completed',
+            'number': normalized,
+            'country': country,
+            'country_code': country_iso,
+            'carrier': carrier_name,
+            'social_presence': social_presence,
+            'social_accounts': ghost_hits,
+            'emails_found': [],
+            'valid': valid_flag,
+            'threat_level': 0,
+            'risk_score': 0,
+        }
+
+        return jsonify(APIResponse.success(None, data=response_data, risk_score=0)), 200
+
+    except Exception as e:
+        logger.error(f"Error in quick scan: {str(e)}", exc_info=True)
+        return jsonify(APIResponse.error(None, f"Scan error: {str(e)}")), 500
+
+
 @phone_bp.route('/batch', methods=['POST'])
 def batch_lookup():
     """
@@ -686,13 +819,12 @@ def create_phone_case():
         case_id = generate_case_id()
         investigation = Investigation(
             id=case_id,
-            username=f"phone_{phone.replace('+', '')}",
-            email=None,
-            phone=phone,
+            primary_entity=f"phone_{phone.replace('+', '')}",
+            case_type='phone',
+            scan_depth='light',
             status='completed',
             created_at=datetime.utcnow(),
-            risk_score=result['risk_score'],
-            risk_level='HIGH' if result['risk_score'] > 60 else 'MEDIUM' if result['risk_score'] > 40 else 'LOW'
+            risk_score=result['risk_score']
         )
         
         db.session.add(investigation)
