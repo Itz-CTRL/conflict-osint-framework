@@ -1,0 +1,327 @@
+/* CountryCodePicker Component Styles */
+
+.country-code-picker {
+  position: relative;
+  width: 100%;
+}
+
+.picker-header {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.picker-button {
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #0a0a0a;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.picker-button:hover:not(:disabled) {
+  border-color: #4a9eff;
+  background: #1a1a1a;
+}
+
+.picker-button:focus {
+  outline: none;
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+}
+
+.picker-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.placeholder {
+  color: #666;
+}
+
+.selected-country {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.flag {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.country-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.country-name {
+  display: block;
+  font-weight: 600;
+  color: #fff;
+}
+
+.dial-code {
+  display: block;
+  font-size: 12px;
+  color: #888;
+  font-weight: 500;
+}
+
+.dropdown-icon {
+  font-size: 12px;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.clear-button {
+  padding: 8px;
+  background: none;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.clear-button:hover {
+  background: rgba(244, 67, 54, 0.1);
+  border-color: #f44336;
+  color: #f44336;
+}
+
+/* Dropdown Menu */
+.picker-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+}
+
+/* Search Input */
+.picker-search {
+  padding: 12px;
+  border-bottom: 1px solid #333;
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #0a0a0a;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+}
+
+.search-input::placeholder {
+  color: #666;
+}
+
+.clear-search {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.clear-search:hover {
+  color: #f44336;
+}
+
+/* Countries List */
+.picker-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.list-loading,
+.list-empty,
+.list-error {
+  padding: 16px;
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+}
+
+.list-error {
+  color: #f44336;
+}
+
+/* Flat List (when searching) */
+.countries-flat {
+  display: flex;
+  flex-direction: column;
+}
+
+.country-item {
+  padding: 12px;
+  border-bottom: 1px solid #333;
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.15s;
+  text-align: left;
+  font-family: inherit;
+}
+
+.country-item:hover {
+  background: rgba(74, 158, 255, 0.1);
+  border-left-color: #4a9eff;
+}
+
+.country-item:last-child {
+  border-bottom: none;
+}
+
+.country-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.country-item .name {
+  font-size: 14px;
+  font-weight: 500;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iso-code {
+  font-size: 11px;
+  color: #888;
+}
+
+.meta {
+  font-size: 11px;
+  color: #888;
+  display: block;
+}
+
+/* Grouped by Region */
+.countries-grouped {
+  display: flex;
+  flex-direction: column;
+}
+
+.region-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.region-header {
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4a9eff;
+  background: #0a0a0a;
+  border-bottom: 1px solid #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.region-countries {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Footer */
+.picker-footer {
+  padding: 10px 12px;
+  border-top: 1px solid #333;
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+}
+
+/* Scrollbar Styling */
+.picker-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.picker-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.picker-list::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.picker-list::-webkit-scrollbar-thumb:hover {
+  background: #4a9eff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .picker-dropdown {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 70vh;
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+    z-index: 3000;
+  }
+
+  .picker-list {
+    max-height: calc(70vh - 80px);
+  }
+}

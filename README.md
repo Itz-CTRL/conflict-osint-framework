@@ -1,120 +1,49 @@
-# SOKO AERIAL OSINT Platform
+# OSINT Investigation Platform
 
-A full-stack OSINT investigation platform for username tracking and misinformation attribution.
+A **military-grade, production-style** OSINT intelligence gathering and analysis system built with Flask (backend) and React (frontend).
 
----
+## Quick Start
 
-## Project Structure
-
+### Backend
+```bash
+cd backend
+pip install -r requirements.txt
+python app.py
 ```
-soko-osint/
-├── backend/           ← Flask Python API
-│   ├── app.py
-│   ├── analyzer.py
-│   ├── database.py
-│   ├── scraper.py
-│   └── requirements.txt
-├── src/               ← React frontend
-│   ├── App.jsx
-│   ├── themes.js
-│   ├── index.js
-│   ├── index.css
-│   ├── utils/
-│   │   └── api.js
-│   └── components/
-│       ├── Header.jsx
-│       ├── Ticker.jsx
-│       ├── Dashboard.jsx
-## SOKO AERIAL OSINT Platform
+Server: `http://localhost:5000`
 
-A full-stack OSINT investigation platform (Flask backend + React frontend).
-
----
-
-**Repository layout (actual)**
-
+### Frontend
+```bash
+cd frontend
+npm install
+npm start
 ```
-soko-osint/
-├── backend/               # Flask API (Python)
-│   ├── app.py
-│   ├── analyzer.py
-│   ├── database.py
-│   ├── scraper.py
-│   ├── network_builder.py
-│   ├── requirements.txt
-│   └── Pipfile
-├── frontend/              # React app (create-react-app)
-│   ├── package.json
-│   ├── public/
-│   │   └── index.html
-│   └── src/
-│       ├── App.jsx
-│       ├── index.js
-│       ├── index.css
-│       ├── themes.js
-│       ├── components/
-│       └── utils/
-└── README.md
-```
+App: `http://localhost:3000`
 
----
+## Features
+
+- 🔍 **Light & Deep Scans** - Quick validation or comprehensive investigation
+- 📊 **Network Graphs** - Visualize entity relationships and connections
+- 📞 **Phone Intelligence** - Advanced phone number analysis (GhostTR.py integration)
+- ⚠️ **Risk Scoring** - Compute 0-100 risk scores
+- 📄 **PDF Reports** - Structured investigation reports
+- 🔗 **Entity Correlation** - Automatic relationship discovery
 
 ## Requirements
 
 - Python 3.9+ (backend)
-- Node.js 18+ and npm (frontend)
+- Node.js 18+ (frontend)
 
-On Linux the instructions below assume a POSIX shell (bash/zsh).
+## Documentation
 
----
+- [Software Requirements Document (SRD)](docs/SRD.md)
+- [Software Design Document (SDD)](docs/SDD.md)
+- [Backend API Reference](BACKEND_API.md)
+- [Services Documentation](backend/SERVICES_DOCUMENTATION.md)
+- [Current Status](CURRENT_STATUS.md)
 
-## Quick start (Linux / macOS)
+## Security & Ethics
 
-1. Backend (API):
+Use this project only with public data and for lawful, ethical research. Do not attempt to access private accounts, bypass authentication, or violate platform terms of service.
 
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
-
-This starts the Flask backend on http://127.0.0.1:5000. Health: http://127.0.0.1:5000/api/health
-
-2. Frontend (React):
-
-```bash
-cd ../frontend
-npm install
-npm start
-```
-
-The React dev server starts on http://localhost:3000 and is proxied to the backend (see `frontend/package.json`).
-
-Notes:
-- The backend also includes a `Pipfile` if you prefer `pipenv`.
-- `frontend/package.json` sets a proxy to `http://127.0.0.1:5000` for API calls.
-
----
-
-## VS Code (recommended)
-
-1. Open the project folder in VS Code.
-2. Open an integrated terminal and run the backend steps in one terminal and the frontend steps in another.
-
----
-
-## Endpoints (examples)
-
-- Frontend: http://localhost:3000
-- Backend API: http://127.0.0.1:5000
-- Health check: http://127.0.0.1:5000/api/health
-
----
-
-## Notes & Ethics
-
-Use this project only with public data and for lawful, ethical research. Do not attempt to access private accounts, bypass authentication, or otherwise violate platform terms of service.
-
-If you'd like, I can also add a short development checklist or startup scripts to simplify running both services concurrently.
+For more information, see the documentation files.
