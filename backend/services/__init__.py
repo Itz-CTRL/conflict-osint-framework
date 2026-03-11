@@ -11,10 +11,44 @@ Services:
 - OSINTScraper: Lightweight platform verification
 """
 
-from .phone_intel import PhoneIntelligenceService
-from .graph_engine import GraphEngineService
+"""Services package exports.
+
+Imports are attempted lazily to avoid hard failures when optional
+dependencies (e.g., phonenumbers, Scrapy) are not installed in test
+environments. Missing services will be None but callers can import
+concrete modules directly when running in a fully provisioned env.
+"""
+
+try:
+    from .phone_intel import PhoneIntelligenceService
+except Exception:
+    PhoneIntelligenceService = None
+
+try:
+    from .graph_engine import GraphEngineService
+except Exception:
+    GraphEngineService = None
+
+# New wrapper services for task manager compatibility
+try:
+    from .analyser_service import AnalyserService
+except Exception:
+    AnalyserService = None
+
+try:
+    from .risk_engine import RiskEngine
+except Exception:
+    RiskEngine = None
+
+try:
+    from .graph_engine_wrapper import GraphEngine
+except Exception:
+    GraphEngine = None
 
 __all__ = [
     'PhoneIntelligenceService',
     'GraphEngineService',
+    'AnalyserService',
+    'RiskEngine',
+    'GraphEngine'
 ]

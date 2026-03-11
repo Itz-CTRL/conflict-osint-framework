@@ -86,9 +86,10 @@ class Validator:
         if len(username) > 255:
             return False, "Username is too long (max 255 characters)"
         
-        # Allow alphanumeric, dots, dashes, underscores
-        if not re.match(r'^[a-zA-Z0-9._-]+$', username):
-            return False, "Username contains invalid characters"
+        # Allow alphanumeric, dots, dashes, underscores and spaces
+        # Also allow @ for handles and common punctuation used in display names
+        if not re.match(r'^[a-zA-Z0-9._\-\s@]+$', username):
+            return False, "Username contains invalid characters (allowed: letters, numbers, space, ., _, -, @)"
         
         return True, None
     

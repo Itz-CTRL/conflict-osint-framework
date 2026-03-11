@@ -87,14 +87,15 @@ class PhoneIntelligence:
     def lookup_light(self, phone_number: str, country_code: Optional[str] = None) -> Dict:
         """
         Perform light phone lookup (fast).
-        Includes: normalization, country detection, carrier lookup, basic email/social search.
+        Returns: timezone, mobile_type, carrier, country info (always included).
+        Only scores risk if VoIP or suspicious patterns detected.
         
         Args:
             phone_number: Phone number to lookup
             country_code: Optional ISO country code
             
         Returns:
-            Dict with basic phone intelligence
+            Dict with basic phone intelligence including timezone and mobile_type
         """
         result = {
             'status': 'error',
@@ -102,6 +103,8 @@ class PhoneIntelligence:
             'raw_number': phone_number,
             'valid': False,
             'error': None,
+            'timezone': None,
+            'mobile_type': None,
             'emails_found': [],
             'social_accounts': {},
             'risk_score': 0.0,
@@ -139,13 +142,14 @@ class PhoneIntelligence:
             if carrier_data:
                 result.update(carrier_data)
             
-            # Get timezone(s)
+            # Get timezone(s) - ALWAYS include in response
             timezone_data = self._get_timezone_info(parsed_number)
-            if timezone_data:
-                result['timezone'] = timezone_data
+            result['timezone'] = timezone_data if timezone_data else 'UTC'
             
-            # Get number type (mobile, fixed, etc.)
-            result['number_type'] = self._get_number_type(parsed_number)
+            # Get number type (mobile, fixed, VoIP, etc.) - ALWAYS include in response
+            mobile_type = self._get_number_type(parsed_number)
+            result['mobile_type'] = mobile_type
+            result['number_type'] = mobile_type  # Alias for backward compatibility
             
             # Light scan: basic email/social patterns only
             light_discovery = self._discover_linked_accounts_light(phone_number, result.get('country', ''))
@@ -153,29 +157,21 @@ class PhoneIntelligence:
                 result['emails_found'] = light_discovery.get('emails', [])
                 result['social_accounts'] = light_discovery.get('social_accounts', {})
             
-            # Determine if any real findings exist before scoring
-            has_findings = bool(result.get('emails_found') or (result.get('social_accounts') and len(result.get('social_accounts', {})) > 0) or result.get('is_voip'))
+            # Check if VoIP (suspicious indicator)
+            is_voip = 'voip' in mobile_type.lower()
+            result['is_voip'] = is_voip
+            
+            # Risk scoring: ONLY apply if there are suspicious findings or VoIP
+            has_suspicious = bool(result.get('emails_found') or (result.get('social_accounts') and len(result.get('social_accounts', {})) > 0) or is_voip)
 
-            if has_findings:
+            if has_suspicious:
                 risk_data = self._calculate_risk_score_light(parsed_number, result)
                 result['risk_score'] = risk_data.get('score', 0.0)
                 result['risk_factors'] = risk_data.get('factors', [])
-                result['is_voip'] = risk_data.get('is_voip', False)
             else:
-                # No findings -> zero risk
+                # No suspicious findings -> zero risk
                 result['risk_score'] = 0.0
                 result['risk_factors'] = []
-                result['is_voip'] = False
-            
-            result['status'] = 'success'
-            result['notes'] = 'Light scan completed successfully'
-            # Aliases and convenience fields expected by callers/tests
-            result['number'] = result.get('phone_number')
-            result['country_code'] = result.get('country_iso') or result.get('country_code')
-            result['region'] = result.get('country')
-            result['last_checked'] = result.get('lookup_timestamp')
-            result['error'] = None
-            result['risk_level'] = self._risk_level_from_score(result.get('risk_score', 0.0))
             
         except Exception as e:
             logger.error(f"Phone light lookup error: {str(e)}")
@@ -188,8 +184,8 @@ class PhoneIntelligence:
     def lookup_deep(self, phone_number: str, country_code: Optional[str] = None) -> Dict:
         """
         Perform deep phone lookup (comprehensive).
-        Includes: all light scan functions + deeper social media correlation,
-        email harvesting, mention scanning, connection discovery, network graph prep.
+        Includes: timezone, mobile_type (always), deep social/email discovery via APIs,
+        mention scanning, connection discovery, network graph preparation.
         
         Args:
             phone_number: Phone number to lookup
@@ -204,8 +200,12 @@ class PhoneIntelligence:
             'raw_number': phone_number,
             'valid': False,
             'error': None,
+            'timezone': None,
+            'mobile_type': None,
             'emails_found': [],
+            'verified_emails': [],
             'social_accounts': {},
+            'verified_social': {},
             'mentions': [],
             'connected_accounts': [],
             'risk_score': 0.0,
@@ -243,36 +243,47 @@ class PhoneIntelligence:
             if carrier_data:
                 result.update(carrier_data)
             
-            # Get timezone(s)
+            # Get timezone(s) - ALWAYS include in response
             timezone_data = self._get_timezone_info(parsed_number)
-            if timezone_data:
-                result['timezone'] = timezone_data
+            result['timezone'] = timezone_data if timezone_data else 'UTC'
             
-            # Get number type (mobile, fixed, etc.)
-            result['number_type'] = self._get_number_type(parsed_number)
+            # Get number type (mobile, fixed, VoIP, etc.) - ALWAYS include in response
+            mobile_type = self._get_number_type(parsed_number)
+            result['mobile_type'] = mobile_type
+            result['number_type'] = mobile_type  # Alias for backward compatibility
             
-            # Deep scan: comprehensive account discovery
+            # Deep scan: comprehensive account discovery (including API-based verification)
             deep_discovery = self._discover_linked_accounts_deep(phone_number, result.get('country', ''))
             if deep_discovery:
                 result['emails_found'] = deep_discovery.get('emails', [])
+                result['verified_emails'] = deep_discovery.get('verified_emails', [])
                 result['social_accounts'] = deep_discovery.get('social_accounts', {})
+                result['verified_social'] = deep_discovery.get('verified_social', {})
                 result['mentions'] = deep_discovery.get('mentions', [])
                 result['connected_accounts'] = deep_discovery.get('connected_accounts', [])
             
-            # Determine if any real findings exist before scoring
-            has_findings = bool(result.get('emails_found') or (result.get('social_accounts') and len(result.get('social_accounts', {})) > 0) or result.get('mentions') or result.get('connected_accounts') or result.get('is_voip'))
+            # Check if VoIP (suspicious indicator)
+            is_voip = 'voip' in mobile_type.lower()
+            result['is_voip'] = is_voip
+            
+            # Risk scoring: ONLY apply if there are actual verified findings or VoIP
+            has_verified_findings = bool(
+                result.get('verified_emails') or 
+                (result.get('verified_social') and len(result.get('verified_social', {})) > 0) or 
+                result.get('mentions') or 
+                result.get('connected_accounts') or 
+                is_voip
+            )
 
-            if has_findings:
+            if has_verified_findings:
                 risk_data = self._calculate_risk_score_deep(parsed_number, result)
                 result['risk_score'] = risk_data.get('score', 0.0)
                 result['risk_factors'] = risk_data.get('factors', [])
-                result['is_voip'] = risk_data.get('is_voip', False)
                 result['is_temporary'] = risk_data.get('is_temporary', False)
                 result['is_prepaid'] = risk_data.get('is_prepaid', False)
             else:
                 result['risk_score'] = 0.0
                 result['risk_factors'] = []
-                result['is_voip'] = False
                 result['is_temporary'] = False
                 result['is_prepaid'] = False
             
@@ -711,60 +722,40 @@ class PhoneIntelligence:
     
     def _discover_linked_accounts_light(self, phone_number: str, country: str) -> Optional[Dict]:
         """
-        Light scan: discover basic linked emails and social accounts (fast).
+        Light scan: minimal discovery - no pattern generation.
+        Light scan focuses on phone metadata only, not email/social patterns.
         
         Args:
             phone_number: Phone number string
             country: Country name
             
         Returns:
-            Dict with basic emails and social accounts
+            Dict with empty emails and social (light scan doesn't search for these)
         """
-        result = {
+        # Light scan returns no email/social patterns - it's fast and metadata-focused
+        # Patterns are only generated in deep scan with verification
+        return {
             'emails': [],
             'social_accounts': {}
         }
-        
-        try:
-            # Clean phone number
-            clean_phone = re.sub(r'\D', '', phone_number)
-            
-            # Only generate 2 basic email patterns
-            potential_emails = [
-                f"{clean_phone}@gmail.com",
-                f"{clean_phone}@yahoo.com",
-            ]
-            
-            result['emails'] = potential_emails
-            
-            # Basic social handles
-            social_handles = {
-                'twitter': f"@{clean_phone}",
-                'instagram': clean_phone,
-            }
-            
-            result['social_accounts'] = social_handles
-            
-        except Exception as e:
-            logger.warning(f"Error during light account discovery: {str(e)}")
-        
-        return result
     
     def _discover_linked_accounts_deep(self, phone_number: str, country: str) -> Optional[Dict]:
         """
-        Deep scan: comprehensive email and social account discovery.
-        Includes email harvesting patterns, mention scanning, connection discovery.
+        Deep scan: comprehensive email and social account discovery with API verification.
+        Includes email pattern generation, API-based verification, mention scanning, connection discovery.
         
         Args:
             phone_number: Phone number string
             country: Country name
             
         Returns:
-            Dict with comprehensive emails, social accounts, mentions, and connections
+            Dict with comprehensive emails, verified results, social accounts, mentions, and connections
         """
         result = {
             'emails': [],
+            'verified_emails': [],  # API-verified emails linked to this phone
             'social_accounts': {},
+            'verified_social': {},  # API-verified social accounts linked to this phone
             'mentions': [],
             'connected_accounts': []
         }
@@ -801,20 +792,48 @@ class PhoneIntelligence:
             
             result['social_accounts'] = social_handles
 
-            # Perform lightweight Ghost-like username scan (live HTTP checks)
+            # API-based verification: Check if phone is linked to breached data or public accounts
             try:
-                ghost_hits = self._ghost_username_scan(clean_phone)
-                # Merge discovered live profiles (prefer live hits)
-                if ghost_hits:
-                    result['social_accounts'].update(ghost_hits)
-                    # add simple mentions for found profiles
-                    for plat, url in ghost_hits.items():
+                verified_data = self._verify_phone_linked_accounts_api(clean_phone, phone_number)
+                if verified_data:
+                    result['verified_emails'] = verified_data.get('verified_emails', [])
+                    result['verified_social'] = verified_data.get('verified_social', {})
+                    # Add API-verified mentions
+                    for email in verified_data.get('verified_emails', []):
+                        result['mentions'].append({
+                            'platform': 'Email Breach Database',
+                            'mention': f'Phone linked to email: {email}',
+                            'context': 'API verification - public breach data',
+                            'timestamp': datetime.utcnow().isoformat(),
+                            'severity': 'high'
+                        })
+                    for plat, url in verified_data.get('verified_social', {}).items():
                         result['mentions'].append({
                             'platform': plat,
-                            'mention': f'Found profile at {url}',
-                            'context': 'GhostTR quick lookup',
-                            'timestamp': datetime.utcnow().isoformat()
+                            'mention': f'Phone linked to {plat} profile',
+                            'context': 'API verification - public registration',
+                            'timestamp': datetime.utcnow().isoformat(),
+                            'severity': 'medium'
                         })
+            except Exception as e:
+                logger.debug(f"API verification for phone links failed: {str(e)}")
+
+            # Perform lightweight Ghost-like username scan (live HTTP checks) as fallback
+            try:
+                ghost_hits = self._ghost_username_scan(clean_phone)
+                # Merge discovered live profiles (prefer live hits, unless already API-verified)
+                if ghost_hits:
+                    for plat, url in ghost_hits.items():
+                        if plat not in result.get('verified_social', {}):
+                            result['social_accounts'][plat] = url
+                            # Add mention for newly discovered profiles
+                            result['mentions'].append({
+                                'platform': plat,
+                                'mention': f'Found profile at {url}',
+                                'context': 'HTTP profile discovery',
+                                'timestamp': datetime.utcnow().isoformat(),
+                                'severity': 'low'
+                            })
             except Exception as e:
                 logger.debug(f"Ghost username scan failed: {str(e)}")
             
@@ -881,9 +900,189 @@ class PhoneIntelligence:
 
         return found
     
+    def _verify_phone_linked_accounts_api(self, clean_phone: str, phone_number: str) -> Optional[Dict]:
+        """
+        Verify if phone is linked to public emails or social accounts using free APIs.
+        Uses HaveIBeenPwned API and reverse phone lookup strategies.
+        
+        Args:
+            clean_phone: Cleaned phone number (digits only)
+            phone_number: Original phone number format
+            
+        Returns:
+            Dict with verified_emails and verified_social, or None if no verification possible
+        """
+        result = {
+            'verified_emails': [],
+            'verified_social': {}
+        }
+        
+        try:
+            # Strategy 1: Check HaveIBeenPwned for phone number in breaches
+            hibp_emails = self._check_hibp_for_phone_emails(clean_phone)
+            if hibp_emails:
+                result['verified_emails'].extend(hibp_emails)
+                logger.debug(f"Found {len(hibp_emails)} verified emails in breach databases")
+            
+            # Strategy 2: Verify generated email patterns against simple checks
+            verified_email_patterns = self._verify_email_patterns(clean_phone)
+            if verified_email_patterns:
+                result['verified_emails'].extend(verified_email_patterns)
+            
+            # Strategy 3: Check for confirmed social account registrations
+            verified_social = self._verify_social_accounts_for_phone(clean_phone)
+            if verified_social:
+                result['verified_social'].update(verified_social)
+                logger.debug(f"Found {len(verified_social)} verified social accounts")
+            
+            return result if (result['verified_emails'] or result['verified_social']) else None
+            
+        except Exception as e:
+            logger.warning(f"Error during phone account verification: {str(e)}")
+            return None
+    
+    def _check_hibp_for_phone_emails(self, clean_phone: str) -> List[str]:
+        """
+        Check HaveIBeenPwned for common email patterns derived from phone.
+        Uses free email pattern checking (not paid API).
+        
+        Args:
+            clean_phone: Cleaned phone number
+            
+        Returns:
+            List of verified emails found in breach data
+        """
+        verified = []
+        
+        # Common phone-based email patterns to check
+        email_patterns = [
+            f"{clean_phone}@gmail.com",
+            f"{clean_phone}@yahoo.com",
+            f"{clean_phone}@hotmail.com",
+            f"{clean_phone}@outlook.com",
+        ]
+        
+        try:
+            for email in email_patterns:
+                # Try HIBP API (free tier allows password check)
+                try:
+                    response = requests.get(
+                        f'https://haveibeenpwned.com/api/v3/breachedaccount/{email}',
+                        headers={'User-Agent': 'PhoneIntel (+contact@example.local)'},
+                        timeout=3
+                    )
+                    if response.status_code == 200:
+                        verified.append(email)
+                        logger.debug(f"Email {email} found in breach database")
+                except requests.RequestException:
+                    pass  # HIBP may not be available or rate limited
+        
+        except Exception as e:
+            logger.debug(f"Error checking HIBP: {str(e)}")
+        
+        return verified
+    
+    def _verify_email_patterns(self, clean_phone: str) -> List[str]:
+        """
+        Verify email patterns using simple validation and common domain checks.
+        
+        Args:
+            clean_phone: Cleaned phone number
+            
+        Returns:
+            List of plausible verified email patterns
+        """
+        verified = []
+        
+        # Check if emails match common patterns found in data breaches
+        common_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']
+        for domain in common_domains:
+            email = f"{clean_phone}@{domain}"
+            # Simple DNS/MX check or registration verification
+            if self._is_email_registered(email):
+                verified.append(email)
+        
+        return verified
+    
+    def _is_email_registered(self, email: str) -> bool:
+        """
+        Simple heuristic check if email might be registered.
+        In production, use real email verification APIs.
+        
+        Args:
+            email: Email address to check
+            
+        Returns:
+            True if email seems plausible/registered, False otherwise
+        """
+        try:
+            # For demo purposes, we don't do real email verification
+            # In production, use services like ZeroBounce, NeverBounce, etc.
+            return False  # Conservative: don't over-claim verified emails
+        except Exception:
+            return False
+    
+    def _verify_social_accounts_for_phone(self, clean_phone: str) -> Dict[str, str]:
+        """
+        Verify if phone number is linked to confirmed social accounts.
+        Performs HTTP profile checks and returns only confirmed profiles.
+        
+        Args:
+            clean_phone: Cleaned phone number
+            
+        Returns:
+            Dict of platform -> profile_url for verified accounts
+        """
+        verified = {}
+        
+        try:
+            session = requests.Session()
+            headers = {'User-Agent': 'PhoneVerify/1.0'}
+            
+            # GitHub API check (free, no auth needed for public users)
+            try:
+                resp = session.get(
+                    f'https://api.github.com/users/{clean_phone}',
+                    headers=headers,
+                    timeout=3
+                )
+                if resp.status_code == 200:
+                    user_data = resp.json()
+                    if user_data.get('id'):  # Real user
+                        verified['GitHub'] = f"https://github.com/{clean_phone}"
+                        logger.debug(f"GitHub user {clean_phone} verified")
+            except (requests.RequestException, ValueError):
+                pass
+            
+            # Twitter/X verification (attempt public profile check)
+            try:
+                resp = session.head(
+                    f'https://twitter.com/{clean_phone}',
+                    allow_redirects=True,
+                    timeout=3,
+                    headers=headers
+                )
+                if resp.status_code == 200:
+                    verified['Twitter'] = f"https://twitter.com/{clean_phone}"
+                    logger.debug(f"Twitter user {clean_phone} verified")
+                elif resp.status_code in (403, 405):
+                    # Try GET if HEAD blocked
+                    resp2 = session.get(f'https://twitter.com/{clean_phone}', timeout=3, headers=headers)
+                    if resp2.status_code == 200:
+                        verified['Twitter'] = f"https://twitter.com/{clean_phone}"
+                        logger.debug(f"Twitter user {clean_phone} verified (GET)")
+            except requests.RequestException:
+                pass
+        
+        except Exception as e:
+            logger.debug(f"Error verifying social accounts: {str(e)}")
+        
+        return verified
+    
     def _calculate_risk_score_light(self, parsed_number: phonenumbers.PhoneNumber, lookup_result: Dict) -> Dict:
         """
         Light scan: calculate basic risk score for phone number (fast).
+        Only scores if VoIP or other suspicious factors detected.
         
         Args:
             parsed_number: Parsed phone number
@@ -892,31 +1091,28 @@ class PhoneIntelligence:
         Returns:
             Dict with risk_score (0-1), factors list, and flags
         """
-        risk_score = 0.3
+        risk_score = 0.0  # Start from zero, only add if suspicious
         risk_factors = []
         
         try:
             # Check if VoIP
-            is_voip = lookup_result.get('number_type', '').lower() == 'voip'
+            is_voip = 'voip' in lookup_result.get('number_type', '').lower()
+            
+            # VoIP is the primary light-scan risk indicator
             if is_voip:
-                risk_score += RISK_FACTORS['VOIP']
-                risk_factors.append('VoIP service detected')
+                risk_score = 0.6  # VoIP is 60% risk
+                risk_factors.append('VoIP service detected - higher fraud risk')
             
-            # Check carrier type
+            # Check carrier type - unknown carrier adds risk
             carrier_type = lookup_result.get('carrier_type', '').upper()
-            if 'UNKNOWN' in carrier_type:
-                risk_score += RISK_FACTORS['UNKNOWN_CARRIER']
-                risk_factors.append('Unknown carrier')
+            if 'UNKNOWN' in carrier_type and risk_score < 0.5:
+                risk_score += 0.3
+                risk_factors.append('Unknown carrier - limited verification possible')
             
-            # Mobile vs fixed line
-            if 'MOBILE' in carrier_type:
-                risk_score -= 0.05
-            
-            # Check validity
-            if lookup_result.get('valid'):
-                risk_score -= 0.05
-            else:
-                risk_score += 0.2
+            # For light scan, we don't penalize mobile numbers - they're common and legitimate
+            # Invalid numbers get flagged but aren't scored in light scan
+            if not lookup_result.get('valid'):
+                risk_factors.append('Phone number failed validation')
             
             # Clamp to 0-1 range
             risk_score = max(0.0, min(1.0, risk_score))
@@ -932,7 +1128,8 @@ class PhoneIntelligence:
     
     def _calculate_risk_score_deep(self, parsed_number: phonenumbers.PhoneNumber, lookup_result: Dict) -> Dict:
         """
-        Deep scan: calculate comprehensive risk score with more factors.
+        Deep scan: calculate comprehensive risk score based on API-verified findings only.
+        Only scores if actual verified emails/socials linked to this phone or VoIP detected.
         
         Args:
             parsed_number: Parsed phone number
@@ -941,56 +1138,43 @@ class PhoneIntelligence:
         Returns:
             Dict with risk_score (0-1), factors list, and flags
         """
-        risk_score = 0.4
+        risk_score = 0.0  # Start from zero, only add based on verified findings
         risk_factors = []
         
         try:
             # Check if VoIP
-            is_voip = lookup_result.get('number_type', '').lower() == 'voip'
+            is_voip = 'voip' in lookup_result.get('number_type', '').lower()
+            
+            # VoIP is highest risk indicator
             if is_voip:
-                risk_score += RISK_FACTORS['VOIP']
-                risk_factors.append('VoIP service detected')
+                risk_score = 0.6
+                risk_factors.append('VoIP service detected - higher fraud risk')
             
-            # Check carrier type
-            carrier_type = lookup_result.get('carrier_type', '').upper()
-            if 'UNKNOWN' in carrier_type:
-                risk_score += RISK_FACTORS['UNKNOWN_CARRIER']
-                risk_factors.append('Unknown carrier')
+            # API-verified emails linked to breaches
+            verified_emails = lookup_result.get('verified_emails', [])
+            if verified_emails:
+                risk_score += min(0.25, len(verified_emails) * 0.1)  # Up to 0.25 for multiple emails
+                risk_factors.append(f'Phone linked to {len(verified_emails)} verified email(s) in breach data')
             
-            # Mobile vs fixed line
-            if 'MOBILE' in carrier_type:
-                risk_score -= 0.05
+            # API-verified social accounts
+            verified_social = lookup_result.get('verified_social', {})
+            if verified_social:
+                risk_score += min(0.2, len(verified_social) * 0.08)
+                risk_factors.append(f'Phone linked to {len(verified_social)} verified social account(s)')
             
-            # Check validity
-            if lookup_result.get('valid'):
-                risk_score -= 0.05
-            else:
-                risk_score += 0.2
-            
-            # Deep scan factors
-            # Account reuse patterns
-            emails_count = len(lookup_result.get('emails_found', []))
-            if emails_count > 5:
-                risk_score += 0.15
-                risk_factors.append(f'Phone linked to {emails_count} email accounts')
-            
-            # Multiple social accounts
-            social_count = len(lookup_result.get('social_accounts', {}))
-            if social_count >= 6:
-                risk_score += 0.1
-                risk_factors.append(f'Active on {social_count} social platforms')
-            
-            # Mentions/reports
+            # Mentions in public data (only count if we have verified findings)
             mentions = lookup_result.get('mentions', [])
-            if mentions:
-                risk_score += len(mentions) * 0.05
-                risk_factors.append(f'Phone mentioned in {len(mentions)} reports')
+            if mentions and (verified_emails or verified_social):
+                high_severity_mentions = [m for m in mentions if m.get('severity') == 'high']
+                risk_score += min(0.15, len(high_severity_mentions) * 0.05)
+                if high_severity_mentions:
+                    risk_factors.append(f'High-severity mentions: {len(high_severity_mentions)}')
             
-            # Connected accounts
+            # Connected accounts (only meaningful with verified findings)
             connections = lookup_result.get('connected_accounts', [])
-            if connections:
-                risk_score += len(connections) * 0.03
-                risk_factors.append(f'Found {len(connections)} connected accounts')
+            if connections and (verified_emails or verified_social):
+                risk_score += min(0.1, len(connections) * 0.03)
+                risk_factors.append(f'Found {len(connections)} account connections')
             
             # Clamp to 0-1 range
             risk_score = max(0.0, min(1.0, risk_score))

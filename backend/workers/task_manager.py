@@ -47,7 +47,7 @@ class TaskManager:
             worker.join(timeout=5)
         logger.info("Background workers stopped")
     
-    def submit_investigation(self, investigation_id, username, scan_depth='light'):
+    def submit_investigation(self, investigation_id, username, scan_depth='light', filters=None):
         """
         Submit investigation task to background queue
         
@@ -55,12 +55,14 @@ class TaskManager:
             investigation_id: Investigation case ID
             username: Username to investigate
             scan_depth: 'light' or 'deep'
+            filters: Optional filter dictionary for narrowing search
         """
         task = {
             'type': 'investigation',
             'investigation_id': investigation_id,
             'username': username,
             'scan_depth': scan_depth,
+            'filters': filters or {},
             'created_at': datetime.utcnow()
         }
         self.task_queue.put(task)
@@ -144,6 +146,7 @@ class TaskManager:
         investigation_id = task['investigation_id']
         username = task['username']
         scan_depth = task['scan_depth']
+        filters = task.get('filters', {})
         
         logger.info(f"Executing investigation task for {investigation_id}")
         
@@ -161,9 +164,9 @@ class TaskManager:
             analyser = AnalyserService(investigation_id)
             
             if scan_depth == 'light':
-                results = analyser.light_scan(username)
+                results = analyser.light_scan(username, filters=filters)
             else:
-                results = analyser.deep_scan(username)
+                results = analyser.deep_scan(username, filters=filters)
             
             # Run risk scoring
             risk_engine = RiskEngine(investigation_id)

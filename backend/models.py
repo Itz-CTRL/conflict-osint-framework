@@ -31,6 +31,7 @@ class Investigation(db.Model):
     findings_data = db.Column(db.JSON, default={})
     graph_data = db.Column(db.JSON, default={})
     logs = db.Column(db.JSON, default=[])
+    filters = db.Column(db.JSON, default={})  # Stored filters for this investigation
     
     # Relationships
     entities = db.relationship('Entity', backref='investigation', cascade='all, delete-orphan')
@@ -148,6 +149,16 @@ class Finding(db.Model):
     
     def to_dict(self):
         """Convert finding to dictionary"""
+        # Extract profile_url from data JSON if available
+        profile_url = self.source
+        username = None
+        profile_picture = None
+        
+        if self.data and isinstance(self.data, dict):
+            profile_url = self.data.get('url', profile_url)
+            username = self.data.get('username') or self.data.get('user')
+            profile_picture = self.data.get('profile_picture') or self.data.get('avatar')
+        
         return {
             'id': self.id,
             'finding_type': self.finding_type,
@@ -155,6 +166,9 @@ class Finding(db.Model):
             'found': self.found,
             'data': self.data,
             'source': self.source,
+            'profile_url': profile_url,  # Add profile_url for frontend clickable links
+            'username': username,  # username for display
+            'profile_picture': profile_picture,  # profile image URL
             'confidence': self.confidence,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }

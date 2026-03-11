@@ -68,6 +68,26 @@ class BehaviorAnalyzer:
                         p.get('platform', 'Unknown') for p in platforms_list
                         if isinstance(p, dict) and p.get('found') is True
                     ]
+                    
+                    # CRITICAL FIX: Populate findings with platform results
+                    # This was the missing step - findings were initialized empty and never filled
+                    report['findings'] = [
+                        {
+                            'platform': p.get('platform', 'Unknown'),
+                            'url': p.get('url', ''),
+                            'username': p.get('username', username),
+                            'found': p.get('found', False),
+                            'confidence': p.get('confidence', 'none'),
+                            'status_code': p.get('status_code'),
+                            'profile_picture': p.get('profile_picture'),
+                            'verified_in_content': p.get('verified_in_content', False),
+                            'checked_at': p.get('checked_at', datetime.now().isoformat())
+                        }
+                        for p in platforms_list
+                        if isinstance(p, dict) and p.get('found') is True
+                    ]
+                    logger.info(f"[ANALYZER] Populated findings array with {len(report['findings'])} found platforms")
+                    
                     report['platform_presence'] = {
                         'found_on': found_on,
                         'count': len(found_on),

@@ -98,11 +98,12 @@ export default function Dashboard({ theme, sidebarOpen, onSidebarClose }) {
                 {/* Table header */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
+                  gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 120px',
                   gap: 12,
                   padding: '10px 20px',
                   background: t.tableHeaderBg,
                   borderBottom: `1px solid ${t.border}`,
+                  alignItems: 'center',
                 }}>
                   {['USERNAME', 'STATUS', 'RISK LEVEL', 'RISK SCORE', 'CREATED', ''].map(h => (
                     <div key={h} style={{
@@ -161,7 +162,7 @@ function InvestigationRow({ inv, theme, deleting, onOpen, onDelete, idx }) {
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'grid',
-        gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
+        gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 120px',
         gap: 12,
         alignItems: 'center',
         padding: '14px 20px',
@@ -203,12 +204,13 @@ function InvestigationRow({ inv, theme, deleting, onOpen, onDelete, idx }) {
       <div style={{
         fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 800,
         color: inv.risk_score >= 67 ? t.riskHigh : inv.risk_score >= 34 ? t.riskMed : t.riskLow,
+        display: 'flex', alignItems: 'center',
       }}>
         {inv.risk_score ?? '—'}
       </div>
 
       {/* Date */}
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: t.textMuted }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: t.textMuted, display: 'flex', alignItems: 'center' }}>
         {inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—'}
       </div>
 

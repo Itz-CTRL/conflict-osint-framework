@@ -282,7 +282,21 @@ class NetworkGraphBuilder:
                 return
             
             profile_url = finding.get('profile_url', '')
+            
+            # FIX: Convert confidence string to float if needed
+            # analyzer returns confidence as string ('high', 'medium', etc)
             confidence = finding.get('confidence', 0.8)
+            if isinstance(confidence, str):
+                confidence_map = {
+                    'high': 0.95,
+                    'medium': 0.7,
+                    'unknown': 0.5,
+                    'none': 0.0
+                }
+                confidence = confidence_map.get(confidence, 0.8)
+            else:
+                # Ensure it's a float in case it's an int
+                confidence = float(confidence)
             
             # Add platform node
             try:
@@ -501,6 +515,19 @@ class NetworkGraphBuilder:
             confidence: Confidence score 0-1
             label: Display label
         """
+        # FIX: Ensure confidence is a float (convert from string if needed)
+        if isinstance(confidence, str):
+            confidence_map = {
+                'high': 0.95,
+                'medium': 0.7,
+                'unknown': 0.5,
+                'none': 0.0
+            }
+            confidence = confidence_map.get(confidence, 0.0)
+        
+        # Clamp confidence to 0-1 range
+        confidence = max(0.0, min(1.0, float(confidence)))
+        
         # Get edge type configuration
         type_config = self.EDGE_TYPES.get(edge_type, {
             'color': '#cbd5e0',

@@ -267,6 +267,57 @@ class InvestigationFilter:
             active_filters.append("No Bots")
         
         return " | ".join(active_filters) if active_filters else "No filters applied"
+    
+    def get_search_parameters(self) -> Dict[str, Any]:
+        """
+        Convert filters to search parameters for intensified searching.
+        
+        When filters are applied, searches should be narrowed and intensified
+        in those specific areas rather than searching broadly.
+        
+        Returns:
+            Dict with search intensity parameters for services
+        """
+        params = {
+            'narrow_search': not self.is_empty(),  # Narrow if any filter applied
+            'intensity': 1.0,  # Base intensity
+            'platforms': self.platform,
+            'locations': self.location,
+            'require_country': self.country,
+            'crawler_depth': 2,  # Normal depth
+            'crawler_max_pages': 50,  # Normal pages
+        }
+        
+        # Increase intensity and depth based on filters
+        active_filter_count = sum([
+            bool(self.platform),
+            bool(self.location),
+            bool(self.country),
+            bool(self.account_type),
+            bool(self.verified_only),
+            self.minimize_bots
+        ])
+        
+        if active_filter_count > 0:
+            # More filters = more intense focused search
+            params['intensity'] = 1.0 + (active_filter_count * 0.3)
+            params['crawler_depth'] = 3  # Deeper crawl for filtered searches
+            params['crawler_max_pages'] = 100  # More pages for focused search
+            params['email_harvester_intensive'] = True
+            params['scraper_retry_attempts'] = 3
+            params['search_strategy'] = 'narrowed_and_intensified'
+        else:
+            params['search_strategy'] = 'broad'
+        
+        return params
+    
+    def should_intensify_for_platforms(self) -> bool:
+        """Check if search should be intensified for platform filters"""
+        return bool(self.platform) and len(self.platform) <= 3
+    
+    def should_intensify_for_location(self) -> bool:
+        """Check if search should be intensified for location filters"""
+        return bool(self.location) and len(self.location) <= 2
 
 
 # Supported countries for location filter

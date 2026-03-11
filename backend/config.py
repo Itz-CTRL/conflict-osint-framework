@@ -29,6 +29,16 @@ class Config:
     CACHE_TYPE = 'simple'
     CACHE_DEFAULT_TIMEOUT = 300
     
+    # Rate Limiting Configuration
+    RATE_LIMIT_ENABLED = True
+    RATE_LIMITS = {
+        'default': '100 per hour',           # Default: 100 requests per hour
+        'investigation_create': '50 per day', # Create investigation: 50 per day
+        'scan': '30 per day',                # Start scan: 30 per day
+        'phone_lookup': '100 per hour',     # Phone lookups: 100 per hour
+        'export': '50 per hour'              # Exports: 50 per hour
+    }
+    
     # Risk Scoring Weights (configurable)
     RISK_WEIGHTS = {
         'scam_keywords': 0.25,
@@ -76,6 +86,21 @@ class Config:
     PDF_ENABLED = True
     PDF_FONT = 'Helvetica'
     PDF_AUTHOR = 'OSINT Investigation Platform'
+    
+    # Email Harvester Configuration
+    EMAIL_HARVESTER_ENABLED = True
+    EMAIL_HARVEST_TIMEOUT = 60
+    EMAIL_HARVEST_INTENSIVE = False  # Use paid APIs when available
+    
+    # Email Harvester API Keys (from environment variables)
+    HUNTER_API_KEY = os.environ.get('HUNTER_API_KEY', '')  # Hunter.io: 50/month free
+    ROCKETEACH_API_KEY = os.environ.get('ROCKETEACH_API_KEY', '')  # RocketReach: paid service
+    TRUECALLER_API_KEY = os.environ.get('TRUECALLER_API_KEY', '')  # Truecaller: paid service
+    EMAIL_CHECKER_API_KEY = os.environ.get('EMAIL_CHECKER_API_KEY', '')  # Email validation
+    
+    # CSV Export Configuration
+    CSV_EXPORT_ENABLED = True
+    
     
 
 class DevelopmentConfig(Config):

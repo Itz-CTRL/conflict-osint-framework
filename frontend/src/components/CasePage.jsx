@@ -108,7 +108,10 @@ export default function CasePage({ theme, sidebarOpen, onSidebarClose }) {
   /* ── Tab count helpers ── */
   const findings   = result?.data?.findings || [];
   const platforms  = findings.filter(f => f.found);
-  const emails     = (result?.data?.analysis?.emails    || []);
+  const emails     = [
+    ...(result?.data?.analysis?.emails || []),
+    ...(result?.data?.emails_harvested || [])
+  ];
   const mentions   = (result?.data?.analysis?.mentions  || []);
 
   const tabsWithCounts = TABS.map(tab => {
@@ -455,29 +458,80 @@ function EmailsTab({ emails, theme }) {
     return <EmptyState icon="📧" message="No emails discovered during this investigation." theme={theme} />;
   }
 
+  // Separate emails into harvested (with metadata) and regular
+  const harvestedEmails = emails.filter(e => e.source || e.confidence || typeof e === 'object' && e.email);
+  const simpleEmails = emails.filter(e => typeof e === 'string');
+
   return (
-    <Card theme={theme} style={{ padding: 24 }}>
-      <SectionTitle icon="📧" title={`Emails Found (${emails.length})`} theme={theme} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-        {emails.map((email, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '12px 14px',
-            borderBottom: `1px solid ${t.borderLight}`,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 16 }}>📧</span>
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: t.text }}>
-                {typeof email === 'string' ? email : email.email || JSON.stringify(email)}
-              </span>
-            </div>
-            {email.source && (
-              <Pill label={email.source} theme={theme} />
-            )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Harvested Emails Section */}
+      {harvestedEmails.length > 0 && (
+        <Card theme={theme} style={{ padding: 24 }}>
+          <SectionTitle icon="📧🔍" title={`Harvested Emails (${harvestedEmails.length})`} theme={theme} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {harvestedEmails.map((email, i) => {
+              const emailStr = typeof email === 'string' ? email : email.email || '';
+              const confidence = email.confidence ? Math.round(email.confidence * 100) : null;
+              const source = email.source || 'extracted';
+              
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 14px',
+                  borderBottom: `1px solid ${t.borderLight}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <span style={{ fontSize: 16 }}>📧</span>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: t.text }}>
+                      {emailStr}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {confidence && (
+                      <span style={{
+                        padding: '2px 8px',
+                        background: confidence >= 80 ? '#4ade80' : confidence >= 60 ? '#fbbf24' : '#ef4444',
+                        color: '#fff',
+                        borderRadius: 4,
+                        fontFamily: "'JetBrains Mono',monospace",
+                        fontSize: 11,
+                        fontWeight: 600
+                      }}>
+                        {confidence}%
+                      </span>
+                    )}
+                    <Pill label={source} theme={theme} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
-    </Card>
+        </Card>
+      )}
+
+      {/* Simple Emails Section */}
+      {simpleEmails.length > 0 && (
+        <Card theme={theme} style={{ padding: 24 }}>
+          <SectionTitle icon="📧" title={`Simple Emails (${simpleEmails.length})`} theme={theme} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {simpleEmails.map((email, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 14px',
+                borderBottom: `1px solid ${t.borderLight}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>📧</span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: t.text }}>
+                    {email}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
 

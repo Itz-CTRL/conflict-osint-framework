@@ -3,25 +3,40 @@ const API_BASE = 'http://127.0.0.1:5000';
 
 /**
  * Core fetch wrapper — normalises errors and returns parsed JSON.
+ * Supports timeout option for long-running operations (in milliseconds).
  */
 export async function apiFetch(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const { timeout = 60000 } = options; // Default 60 seconds
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  let json;
   try {
-    json = await res.json();
-  } catch {
-    throw new Error(`HTTP ${res.status} — non-JSON response`);
-  }
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      signal: controller.signal,
+    });
 
-  if (!res.ok) {
-    throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
-  }
+    let json;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`HTTP ${res.status} — non-JSON response`);
+    }
 
-  return json;
+    if (!res.ok) {
+      throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
+    }
+
+    return json;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms — server may still be processing`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -54,7 +69,10 @@ export const api = {
 
   /** POST /api/investigation/scan/:caseId/:scanType → { status, case_id, data, graph, risk_score } */
   startScan: (caseId, scanType = 'light') =>
-    apiFetch(`/api/investigation/scan/${caseId}/${scanType}`, { method: 'POST' }),
+    apiFetch(`/api/investigation/scan/${caseId}/${scanType}`, { 
+      method: 'POST',
+      timeout: scanType === 'deep' ? 180000 : 120000 // Deep: 3 mins, Light: 2 mins
+    }),
 
   /** GET /api/investigation/status/:caseId → { status, case_id, data: { status, risk_score, ... } } */
   getStatus: (caseId) => apiFetch(`/api/investigation/status/${caseId}`),

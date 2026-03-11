@@ -21,6 +21,7 @@ from services.network_builder import NetworkGraphBuilder
 from services.suggestion_engine import SuggestionEngine
 from services.filter_service import InvestigationFilter
 from utils import APIResponse, Validator, generate_case_id, log_activity
+from workers.task_manager import get_task_manager
 import uuid
 import json
 
@@ -177,6 +178,10 @@ def create_investigation():
         if not username:
             return jsonify(APIResponse.error(None, "Username is required")), 400
         
+        # CRITICAL FIX: Normalize username - remove spaces, convert to valid username
+        # "elon musk" -> "elonmusk", handles multi-word input by removing spaces
+        username = username.replace(' ', '').lower()
+        print(f"[INVESTIGATION CREATE DEBUG] Normalized username={username}")
         is_valid, error = Validator.validate_username(username)
         if not is_valid:
             logger.warning(f"Invalid username: {username} - {error}")
@@ -231,23 +236,27 @@ def create_investigation():
             except Exception as e:
                 logger.warning(f"Error creating country filter: {str(e)}")
         
+        # Determine scan depth (allow override)
+        scan_depth = data.get('scan_depth', 'light') if isinstance(data.get('scan_depth', None), str) else 'light'
+        is_valid_depth, depth_error = Validator.validate_scan_depth(scan_depth)
+        if not is_valid_depth:
+            scan_depth = 'light'
+
         # Create investigation case
         case_id = generate_case_id()
         investigation = Investigation(
             id=case_id,
             case_type='username',
             primary_entity=username,
-            scan_depth='light',
+            scan_depth=scan_depth,
             status='pending',
             created_at=datetime.utcnow(),
-            risk_score=0
+            risk_score=0,
+            filters=filters.to_dict() if not filters.is_empty() else {}
         )
         
-        # Add optional fields
-        if email:
-            investigation.email = email
-        if phone:
-            investigation.phone = phone
+        # Note: email and phone are stored as Entity objects during scanning, not directly on Investigation
+        # They will be discovered and added to entities during the scan process
         
         try:
             db.session.add(investigation)
@@ -256,6 +265,26 @@ def create_investigation():
             logger.info(f"Created investigation case {case_id} for username {username}")
             if not filters.is_empty():
                 logger.info(f"Filters: {filters.get_description()}")
+
+            # Submit background task via Celery
+            try:
+                from celery_config import celery_app, run_investigation_scan
+                task = run_investigation_scan.apply_async(
+                    args=[case_id, username, scan_depth],
+                    kwargs={'filters': filters.to_dict() if not filters.is_empty() else {}},
+                    task_id=f"inv-{case_id}"
+                )
+                logger.info(f"Submitted Celery task {task.id} for case {case_id} (scan_depth={scan_depth})")
+            except Exception as e:
+                logger.warning(f"Failed to submit Celery task for case {case_id}: {e}")
+                # Fallback to direct execution if Celery not available
+                try:
+                    tm = get_task_manager()
+                    tm.submit_investigation(case_id, username, scan_depth=scan_depth, 
+                                          filters=filters.to_dict() if not filters.is_empty() else {})
+                    logger.info(f"Fallback: Submitted task via TaskManager for case {case_id}")
+                except Exception as tm_error:
+                    logger.warning(f"Fallback also failed: {tm_error}")
         
         except Exception as e:
             logger.error(f"Error saving investigation: {str(e)}")
@@ -321,14 +350,11 @@ def start_scan(case_id, scan_type):
             print(f"[SCAN DEBUG] Invalid scan type: {scan_type}")
             logger.warning(f"[SCAN] Invalid scan type: {scan_type}")
             return jsonify({
-                'status': 'completed',
+                'status': 'error',
                 'case_id': case_id,
-                'target': 'unknown',
-                'findings': [],
-                'threat_level': 0,
-                'network_nodes': [],
-                'network_edges': []
-            }), 200
+                'error': 'Invalid scan type. Must be light or deep',
+                'task_id': None
+            }), 400
         
         # Get investigation case
         investigation = None
@@ -341,32 +367,26 @@ def start_scan(case_id, scan_type):
             print(f"[SCAN DEBUG] Investigation case not found: {case_id}")
             logger.warning(f"[SCAN] Investigation case not found: {case_id}")
             return jsonify({
-                'status': 'completed',
+                'status': 'error',
                 'case_id': case_id,
-                'target': 'unknown',
-                'findings': [],
-                'threat_level': 0,
-                'network_nodes': [],
-                'network_edges': []
-            }), 200
+                'error': 'Investigation case not found',
+                'task_id': None
+            }), 404
         
         username = investigation.primary_entity
         print(f"[SCAN DEBUG] Investigation found: case={case_id}, username={username}, status={investigation.status}")
         logger.info(f"[SCAN] Starting {scan_type} scan: case={case_id}, username={username}")
         
-        if investigation.status != 'pending':
-            logger.warning(f"[SCAN] Investigation not pending: status={investigation.status}")
+        if investigation.status not in ['pending', 'running']:
+            logger.warning(f"[SCAN] Investigation not ready: status={investigation.status}")
             return jsonify({
-                'status': 'completed',
+                'status': 'error',
                 'case_id': case_id,
-                'target': username,
-                'findings': [],
-                'threat_level': 0,
-                'network_nodes': [],
-                'network_edges': []
-            }), 200
+                'error': f'Investigation status is {investigation.status}. Cannot start scan.',
+                'task_id': None
+            }), 409
         
-        # Update status
+        # Update status to running
         try:
             investigation.status = 'running'
             investigation.started_at = datetime.utcnow()
@@ -375,134 +395,41 @@ def start_scan(case_id, scan_type):
             logger.error(f"[SCAN] Error updating status: {str(e)}")
             db.session.rollback()
         
-        # Execute scan - must never raise
-        result = None
-        scan_error = None
-        
+        # Submit Celery task
         try:
-            if scan_type == 'light':
-                logger.debug(f"[SCAN] Executing light scan")
-                result = _light_scan(investigation)
-            else:
-                logger.debug(f"[SCAN] Executing deep scan")
-                result = _deep_scan(investigation)
+            from celery_config import celery_app, run_investigation_scan
+            task = run_investigation_scan.apply_async(
+                args=[case_id, username, scan_type],
+                task_id=f"scan-{case_id}-{scan_type}"
+            )
+            logger.info(f"Submitted Celery task {task.id} for {scan_type} scan on case {case_id}")
             
-            logger.info(f"[SCAN] Scan execution completed")
-        except Exception as e:
-            logger.error(f"[SCAN] Service error during scan: {str(e)}", exc_info=True)
-            scan_error = str(e)
-            # Return safe empty result
-            result = {
-                'data': {
-                    'username': username,
-                    'platforms_checked': 0,
-                    'platforms_found': 0,
-                    'analysis': {
-                        'username': username,
-                        'risk_score': 0,
-                        'risk_level': 'UNKNOWN',
-                        'findings': [],
-                        'analysis_notes': [f'Scan failed: {scan_error}']
-                    }
-                },
-                'graph': {'nodes': [], 'edges': []},
-                'risk_score': 0
-            }
-        
-        # Ensure result structure is valid
-        if not result:
-            logger.error(f"[SCAN] Scan returned None")
-            result = {
-                'data': {
-                    'username': username,
-                    'platforms_checked': 0,
-                    'platforms_found': 0,
-                    'analysis': {
-                        'username': username,
-                        'risk_score': 0,
-                        'risk_level': 'UNKNOWN',
-                        'findings': []
-                    }
-                },
-                'graph': {'nodes': [], 'edges': []},
-                'risk_score': 0
-            }
-        
-        # Extract safe values
-        print(f"[SCAN] Extracting result values...")
-        data = result.get('data', {})
-        graph = result.get('graph', {'nodes': [], 'edges': []})
-        risk_score = float(result.get('risk_score', 0))
-        
-        print(f"[SCAN] risk_score type: {type(risk_score)}, value: {risk_score}")
-        logger.info(f"[SCAN] Risk score: {risk_score}")
-        
-        # Ensure analysis exists
-        analysis = data.get('analysis', {
-            'username': username,
-            'risk_score': 0,
-            'risk_level': 'UNKNOWN',
-            'findings': []
-        })
-        
-        # Update database
-        try:
-            print(f"[SCAN] Updating investigation status to 'completed'...")
-            investigation.status = 'completed'
-            investigation.completed_at = datetime.utcnow()
-            investigation.risk_score = float(risk_score)
-            db.session.commit()
-            print(f"[SCAN] Investigation status updated successfully")
-            logger.info(f"[SCAN] Updated investigation: status=completed, risk_score={risk_score}")
-        except Exception as e:
-            print(f"[SCAN] ERROR updating DB: {str(e)}")
-            logger.error(f"[SCAN] Error updating DB: {str(e)}")
-            db.session.rollback()
-        
-        # Build safe response with JSON serialization
-        print(f"[SCAN] Building response object...")
-        response = {
-            'status': 'completed',
-            'case_id': case_id,
-            'target': username,
-            'findings': list(data.get('analysis', {}).get('findings', [])) if data.get('analysis', {}).get('findings') else [],
-            'threat_level': float(risk_score),
-            'network_nodes': list(graph.get('nodes', [])) if graph.get('nodes') else [],
-            'network_edges': list(graph.get('edges', [])) if graph.get('edges') else [],
-            'risk_level': str(analysis.get('risk_level', 'UNKNOWN'))
-        }
-        
-        if scan_error:
-            response['error_note'] = str(scan_error)
-        
-        # Ensure response is JSON-serializable
-        print(f"[SCAN] Serializing response to JSON...")
-        from utils.debug_helpers import make_json_serializable
-        try:
-            response = make_json_serializable(response)
-            json.dumps(response)  # Test serialization
-            print(f"[SCAN] Response JSON serialization: SUCCESS")
-            logger.info(f"[SCAN] Response is JSON-serializable")
-        except Exception as e:
-            print(f"[SCAN] ERROR: Response not JSON-serializable: {str(e)}")
-            logger.error(f"[SCAN] Response serialization error: {str(e)}")
-            # Build minimal safe response
-            response = {
-                'status': 'completed',
+            return jsonify({
+                'status': 'queued',
                 'case_id': case_id,
+                'scan_type': scan_type,
                 'target': username,
-                'findings': [],
-                'threat_level': 0,
-                'network_nodes': [],
-                'network_edges': [],
-                'risk_level': 'UNKNOWN',
-                'error_note': 'Response serialization error - partial results'
-            }
+                'task_id': task.id,
+                'message': f'{scan_type.upper()} scan queued for execution'
+            }), 202
         
-        print(f"[SCAN] Response ready. Returning HTTP 200")
-        print(f"[SCAN] Response threat_level: {response.get('threat_level')}")
-        logger.info(f"[SCAN] Returning response: threat_level={response.get('threat_level')}")
-        return jsonify(response), 200
+        except Exception as e:
+            logger.warning(f"Failed to submit Celery task for case {case_id}: {e}")
+            # Fallback to synchronous execution if Celery not available
+            logger.info(f"Fallback: Executing {scan_type} scan synchronously")
+            
+            result = None
+            try:
+                if scan_type == 'light':
+                    result = _light_scan(investigation)
+                else:
+                    result = _deep_scan(investigation)
+                logger.info(f"[SCAN] Sync scan completed successfully")
+            except Exception as sync_error:
+                logger.error(f"[SCAN] Sync scan failed: {str(sync_error)}", exc_info=True)
+                result = _build_safe_result(username, investigation.id, str(sync_error))
+            
+            return _format_scan_response(case_id, username, result)
     
     except Exception as e:
         print(f"[SCAN] CRITICAL ERROR at top level: {str(e)}")
@@ -522,7 +449,7 @@ def start_scan(case_id, scan_type):
 
 @investigation_bp.route('/status/<case_id>', methods=['GET'])
 def get_status(case_id):
-    """Get investigation status and current progress"""
+    """Get investigation status with enhanced progress tracking"""
     try:
         investigation = Investigation.query.get(case_id)
         if not investigation:
@@ -530,6 +457,30 @@ def get_status(case_id):
         
         # Get findings count
         findings_count = Finding.query.filter_by(investigation_id=case_id).count()
+        entities_count = Entity.query.filter_by(investigation_id=case_id).count()
+        
+        # Calculate time metrics
+        time_elapsed = None
+        time_remaining = None
+        progress_percent = 0
+        
+        if investigation.started_at:
+            time_elapsed = int((datetime.utcnow() - investigation.started_at).total_seconds())
+            
+            # Estimate remaining time based on status
+            if investigation.status == 'running':
+                # Light scan: ~10 seconds, Deep scan: ~180 seconds
+                total_estimate = 10 if investigation.scan_depth == 'light' else 180
+                time_remaining = max(0, total_estimate - time_elapsed)
+                progress_percent = min(95, int((time_elapsed / total_estimate) * 100))
+            elif investigation.status == 'completed':
+                progress_percent = 100
+                time_remaining = 0
+        
+        if investigation.completed_at and investigation.started_at:
+            total_duration = int((investigation.completed_at - investigation.started_at).total_seconds())
+        else:
+            total_duration = None
         
         response = APIResponse.success(
             case_id,
@@ -538,9 +489,16 @@ def get_status(case_id):
                 'status': investigation.status,
                 'risk_score': investigation.risk_score,
                 'findings_count': findings_count,
+                'entities_count': entities_count,
+                'progress_percent': progress_percent,
+                'time_elapsed_seconds': time_elapsed,
+                'time_remaining_seconds': time_remaining,
+                'total_duration_seconds': total_duration,
+                'current_task': f"Scanning {investigation.primary_entity}...",
                 'created_at': investigation.created_at.isoformat(),
                 'started_at': investigation.started_at.isoformat() if investigation.started_at else None,
-                'completed_at': investigation.completed_at.isoformat() if investigation.completed_at else None
+                'completed_at': investigation.completed_at.isoformat() if investigation.completed_at else None,
+                'export_available': investigation.status == 'completed'
             },
             risk_score=investigation.risk_score,
             status=investigation.status
@@ -551,6 +509,122 @@ def get_status(case_id):
     except Exception as e:
         logger.error(f"Error getting status: {str(e)}")
         return jsonify(APIResponse.error(case_id, f"Server error: {str(e)}")), 500
+
+
+@investigation_bp.route('/export/<case_id>/pdf', methods=['GET'])
+def export_pdf(case_id):
+    """Export investigation as PDF report"""
+    try:
+        investigation = Investigation.query.get(case_id)
+        if not investigation:
+            return jsonify(APIResponse.error(case_id, "Investigation not found")), 404
+        
+        if investigation.status != 'completed':
+            return jsonify(APIResponse.error(case_id, "Investigation not completed yet")), 400
+        
+        # Get findings
+        findings = Finding.query.filter_by(investigation_id=case_id).all()
+        findings_data = [json.loads(f.data) if isinstance(f.data, str) else f.data for f in findings]
+        
+        # Get entities
+        entities = Entity.query.filter_by(investigation_id=case_id).all()
+        
+        # Prepare investigation data
+        investigation_data = {
+            'case_id': case_id,
+            'username': investigation.primary_entity,
+            'email': getattr(investigation, 'email', None),
+            'phone': getattr(investigation, 'phone', None),
+            'status': investigation.status,
+            'risk_score': investigation.risk_score,
+            'risk_level': 'CRITICAL' if investigation.risk_score >= 75 else ('HIGH' if investigation.risk_score >= 50 else ('MEDIUM' if investigation.risk_score >= 25 else 'LOW')),
+            'platforms_checked': 20,
+            'platforms_found': len(findings_data),
+            'created_at': investigation.created_at.isoformat(),
+            'completed_at': investigation.completed_at.isoformat() if investigation.completed_at else None
+        }
+        
+        # Prepare analysis data
+        analysis = {
+            'risk_score': investigation.risk_score,
+            'behavior_flags': [],
+            'keyword_hits': [],
+            'platform_presence': {'found_on': [f.get('platform', 'Unknown') for f in findings_data]},
+            'recommendations': [
+                'Continue monitoring account activity',
+                'Cross-reference with known threat databases',
+                'Archive profile content for evidence'
+            ]
+        }
+        
+        # Generate PDF
+        from services.pdf_generator import PDFReportGenerator
+        generator = PDFReportGenerator()
+        pdf_buffer = generator.generate(investigation_data, findings_data, analysis)
+        
+        # Send file
+        from flask import send_file
+        filename = f"investigation_{case_id}.pdf"
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Error exporting PDF: {str(e)}")
+        return jsonify(APIResponse.error(case_id, f"PDF generation failed: {str(e)}")), 500
+
+
+@investigation_bp.route('/export/<case_id>/csv', methods=['GET'])
+def export_csv(case_id):
+    """Export investigation findings as CSV"""
+    try:
+        investigation = Investigation.query.get(case_id)
+        if not investigation:
+            return jsonify(APIResponse.error(case_id, "Investigation not found")), 404
+        
+        if investigation.status != 'completed':
+            return jsonify(APIResponse.error(case_id, "Investigation not completed yet")), 400
+        
+        # Get findings
+        findings = Finding.query.filter_by(investigation_id=case_id).all()
+        findings_data = []
+        
+        for f in findings:
+            data = json.loads(f.data) if isinstance(f.data, str) else f.data
+            findings_data.append({
+                'platform': data.get('platform', ''),
+                'username': data.get('username', ''),
+                'found': data.get('found', False),
+                'confidence': data.get('confidence', 'unknown'),
+                'verified_in_content': data.get('verified_in_content', False),
+                'status_code': data.get('status_code', 0),
+                'url': data.get('url', ''),
+                'may_be_rate_limited': data.get('may_be_rate_limited', False)
+            })
+        
+        # Generate CSV
+        from services.csv_exporter import CSVExporter
+        csv_data = CSVExporter.export_findings(case_id, findings_data)
+        
+        # Send file
+        from flask import send_file
+        from io import BytesIO
+        csv_buffer = BytesIO(csv_data.encode('utf-8'))
+        filename = f"investigation_{case_id}.csv"
+        
+        return send_file(
+            csv_buffer,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Error exporting CSV: {str(e)}")
+        return jsonify(APIResponse.error(case_id, f"CSV export failed: {str(e)}")), 500
 
 
 @investigation_bp.route('/result/<case_id>', methods=['GET'])
@@ -729,12 +803,24 @@ def _light_scan(investigation):
                 
                 if result.get('found'):
                     platform_results['found_count'] += 1
-                    print(f"[SCAN] ✓ FOUND on {platform_name}")
-                    logger.info(f"[SCAN] ✓ FOUND {username} on {platform_name}")
+                    print(f"[SCAN] ✓ FOUND on {platform_name} - Result: {result}")
+                    logger.info(f"[SCAN] ✓ FOUND {username} on {platform_name} (result={result})")
                     
                     try:
                         # Save finding to DB
                         print(f"[SCAN] Saving finding for {platform_name}...")
+                        
+                        # FIX: Convert confidence string to float (0-1 scale)
+                        # scraper returns: 'high', 'medium', 'unknown', 'none'
+                        confidence_str = result.get('confidence', 'none')
+                        confidence_map = {
+                            'high': 0.95,
+                            'medium': 0.7,
+                            'unknown': 0.5,
+                            'none': 0.0
+                        }
+                        confidence_float = confidence_map.get(confidence_str, 0.0)
+                        
                         finding = Finding(
                             id=str(uuid.uuid4()),
                             investigation_id=investigation.id,
@@ -742,7 +828,7 @@ def _light_scan(investigation):
                             platform=platform_name,
                             found=bool(result.get('found')),
                             source=url,
-                            confidence=float(result.get('confidence', 0)),
+                            confidence=confidence_float,  # Now a float!
                             data=result if isinstance(result, dict) else json.loads(result) if isinstance(result, str) else {}
                         )
                         db.session.add(finding)
@@ -786,12 +872,32 @@ def _light_scan(investigation):
             logger.error(f"[SCAN] Error committing findings: {str(e)}")
             db.session.rollback()
         
+        # Apply filters to platform results if configured
+        print(f"[SCAN] Applying filters to results...")
+        if investigation.filters:
+            try:
+                from services.filter_service import InvestigationFilter
+                filters = InvestigationFilter.from_dict(investigation.filters)
+                if not filters.is_empty():
+                    print(f"[SCAN] Filters active: {filters.get_description()}")
+                    original_count = len(platform_results['platforms'])
+                    platform_results['platforms'] = filters.apply_to_findings(platform_results['platforms'])
+                    filtered_count = len(platform_results['platforms'])
+                    print(f"[SCAN] Filter results: {original_count} platforms → {filtered_count} platforms")
+                    logger.info(f"[SCAN] Filtered: {original_count} platforms → {filtered_count}")
+                    platform_results['found_count'] = len([p for p in platform_results['platforms'] if p.get('found')])
+            except Exception as e:
+                print(f"[SCAN] ERROR applying filters: {str(e)}")
+                logger.debug(f"[SCAN] Filter error (continuing): {str(e)}")
+        
         # Run basic analysis on available data
         print(f"[SCAN] Running behavior analysis...")
         analysis = {}
         try:
             analysis = analyzer.analyze(username, platform_results)
             print(f"[SCAN] Analysis completed. Risk score: {analysis.get('risk_score', 0)}")
+            print(f"[SCAN] Analysis findings count: {len(analysis.get('findings', []))}")
+            print(f"[SCAN] Analysis findings: {analysis.get('findings', [])}")
             logger.info(f"[SCAN] Analysis completed for {username}")
         except Exception as e:
             print(f"[SCAN] ERROR in analysis: {str(e)}")
@@ -934,6 +1040,10 @@ def _deep_scan(investigation):
     if deep_data['reddit'] or deep_data['github']:
         try:
             if deep_data['reddit'] and deep_data['reddit'].get('found'):
+                # Deep data findings get high confidence since they're verified
+                confidence_str = deep_data['reddit'].get('confidence', 'high') if isinstance(deep_data['reddit'], dict) else 'high'
+                confidence_map = {'high': 0.95, 'medium': 0.7, 'unknown': 0.5, 'none': 0.0}
+                confidence_float = confidence_map.get(confidence_str, 0.95)
                 finding = Finding(
                     id=str(uuid.uuid4()),
                     investigation_id=investigation.id,
@@ -941,12 +1051,16 @@ def _deep_scan(investigation):
                     platform='Reddit',
                     found=True,
                     source=f"https://reddit.com/user/{investigation.primary_entity}",
-                    confidence=float(deep_data['reddit'].get('confidence', 0)) if isinstance(deep_data['reddit'], dict) else 0,
+                    confidence=confidence_float,
                     data=deep_data['reddit'] if isinstance(deep_data['reddit'], dict) else {}
                 )
                 db.session.add(finding)
             
             if deep_data['github'] and deep_data['github'].get('found'):
+                # Deep data findings get high confidence since they're verified
+                confidence_str = deep_data['github'].get('confidence', 'high') if isinstance(deep_data['github'], dict) else 'high'
+                confidence_map = {'high': 0.95, 'medium': 0.7, 'unknown': 0.5, 'none': 0.0}
+                confidence_float = confidence_map.get(confidence_str, 0.95)
                 finding = Finding(
                     id=str(uuid.uuid4()),
                     investigation_id=investigation.id,
@@ -954,7 +1068,7 @@ def _deep_scan(investigation):
                     platform='GitHub',
                     found=True,
                     source=f"https://github.com/{investigation.primary_entity}",
-                    confidence=float(deep_data['github'].get('confidence', 0)) if isinstance(deep_data['github'], dict) else 0,
+                    confidence=confidence_float,
                     data=deep_data['github'] if isinstance(deep_data['github'], dict) else {}
                 )
                 db.session.add(finding)
@@ -965,10 +1079,27 @@ def _deep_scan(investigation):
             logger.error(f"Error saving deep data findings: {str(e)}")
             db.session.rollback()
     
+    # Email harvesting integration - SKIPPED in deep scan (takes too long, do asynchronously)
+    # For now, return response immediately without waiting for email harvest
+    logger.info(f"Deep scan completed for {investigation.primary_entity} - skipping email harvest to return response quickly")
+    
     # Rebuild graph with all available data
     try:
         all_findings = Finding.query.filter_by(investigation_id=investigation.id).all()
         findings_data = [json.loads(f.data) if isinstance(f.data, str) else f.data for f in all_findings]
+        
+        # Apply filters before building graph
+        if investigation.filters:
+            try:
+                from services.filter_service import InvestigationFilter
+                filters = InvestigationFilter.from_dict(investigation.filters)
+                if not filters.is_empty():
+                    original_count = len(findings_data)
+                    findings_data = filters.apply_to_findings(findings_data)
+                    filtered_count = len(findings_data)
+                    logger.info(f"Deep scan filtered findings: {original_count} → {filtered_count}")
+            except Exception as e:
+                logger.debug(f"Filter error in deep_scan (continuing): {str(e)}")
         
         graph_data = graph_builder.build_from_investigation(
             {'username': investigation.primary_entity, 'id': investigation.id},
@@ -982,4 +1113,97 @@ def _deep_scan(investigation):
     
     logger.info(f"Deep scan completed for {investigation.primary_entity}")
     return result
+
+
+def _build_safe_result(username, investigation_id, error_msg=''):
+    """Build a safe empty result for error cases"""
+    return {
+        'data': {
+            'username': username,
+            'platforms_checked': 0,
+            'platforms_found': 0,
+            'analysis': {
+                'username': username,
+                'risk_score': 0,
+                'risk_level': 'UNKNOWN',
+                'findings': [],
+                'analysis_notes': [f'Scan error: {error_msg}'] if error_msg else []
+            },
+            'errors': [error_msg] if error_msg else []
+        },
+        'graph': {'nodes': [], 'edges': []},
+        'risk_score': 0
+    }
+
+
+def _format_scan_response(case_id, username, result):
+    """Format scan result into response JSON"""
+    print(f"\n[RESPONSE] ========== FORMATTING RESPONSE ==========")
+    print(f"[RESPONSE] Case ID: {case_id}, Username: {username}")
+    print(f"[RESPONSE] Result type: {type(result)}")
+    logger.info(f"[RESPONSE] Starting response formatting for case {case_id}")
+    
+    try:
+        data = result.get('data', {})
+        graph = result.get('graph', {'nodes': [], 'edges': []})
+        risk_score = float(result.get('risk_score', 0))
+        analysis = data.get('analysis', {})
+        
+        print(f"[RESPONSE] Data keys: {list(data.keys())}")
+        print(f"[RESPONSE] Graph nodes: {len(graph.get('nodes', []))}, edges: {len(graph.get('edges', []))}")
+        print(f"[RESPONSE] Analysis findings: {len(analysis.get('findings', []))}")
+        print(f"[RESPONSE] Risk score: {risk_score}")
+        logger.info(f"[RESPONSE] Formatting response: findings={len(analysis.get('findings', []))}, threat_level={risk_score}")
+        
+        # Update database
+        try:
+            investigation = Investigation.query.get(case_id)
+            if investigation:
+                investigation.status = 'completed'
+                investigation.completed_at = datetime.utcnow()
+                investigation.risk_score = float(risk_score)
+                db.session.commit()
+                print(f"[RESPONSE] Investigation {case_id} updated in DB: status=completed, risk_score={risk_score}")
+                logger.info(f"[RESPONSE] Updated investigation {case_id}: status=completed, risk_score={risk_score}")
+        except Exception as e:
+            print(f"[RESPONSE] Error updating investigation: {str(e)}")
+            logger.error(f"[RESPONSE] Error updating investigation in _format_scan_response: {str(e)}")
+            db.session.rollback()
+        
+        response = {
+            'status': 'completed',
+            'case_id': case_id,
+            'target': username,
+            'findings': list(analysis.get('findings', [])),
+            'threat_level': float(risk_score),
+            'network_nodes': list(graph.get('nodes', [])) if graph.get('nodes') else [],
+            'network_edges': list(graph.get('edges', [])) if graph.get('edges') else [],
+            'risk_level': str(analysis.get('risk_level', 'UNKNOWN')),
+        }
+        
+        print(f"[RESPONSE] Response constructed successfully")
+        print(f"[RESPONSE] Final findings count: {len(response['findings'])}")
+        logger.info(f"[RESPONSE] Response ready: findings={len(response['findings'])}, threat_level={response['threat_level']}")
+        
+        result_tuple = jsonify(response), 200
+        print(f"[RESPONSE] Returning response tuple: {type(result_tuple)}")
+        logger.info(f"[RESPONSE] Returning formatted response")
+        return result_tuple
+    except Exception as e:
+        print(f"[RESPONSE] CRITICAL ERROR in _format_scan_response: {str(e)}")
+        logger.error(f"[RESPONSE] Error in _format_scan_response: {str(e)}", exc_info=True)
+        # Return fallback response
+        fallback = {
+            'status': 'completed',
+            'case_id': case_id,
+            'target': username,
+            'findings': [],
+            'threat_level': 0,
+            'network_nodes': [],
+            'network_edges': [],
+            'risk_level': 'UNKNOWN',
+            'error_note': f'Response formatting error: {str(e)}'
+        }
+        print(f"[RESPONSE] Returning fallback response due to error")
+        return jsonify(fallback), 200
 

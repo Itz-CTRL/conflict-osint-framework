@@ -143,15 +143,31 @@ def get_json_report(case_id):
             findings_data
         )
         
+        # Compute risk level from score
+        risk_score = investigation.risk_score or 0
+        if risk_score >= 75:
+            risk_level = 'CRITICAL'
+        elif risk_score >= 50:
+            risk_level = 'HIGH'
+        elif risk_score >= 25:
+            risk_level = 'MEDIUM'
+        else:
+            risk_level = 'LOW'
+        
+        # Extract email/phone from findings if available
+        findings_data = investigation.findings_data or {}
+        emails = findings_data.get('emails', [])
+        phones = findings_data.get('phones', [])
+        
         json_report = {
             'investigation': {
                 'id': investigation.id,
                 'username': investigation.primary_entity,
-                'email': investigation.email,
-                'phone': investigation.phone,
+                'email': emails[0] if emails else None,
+                'phone': phones[0] if phones else None,
                 'status': investigation.status,
-                'risk_score': investigation.risk_score,
-                'risk_level': investigation.risk_level,
+                'risk_score': risk_score,
+                'risk_level': risk_level,
                 'created_at': investigation.created_at.isoformat(),
                 'completed_at': investigation.completed_at.isoformat() if investigation.completed_at else None
             },
@@ -240,11 +256,22 @@ def _generate_pdf_content(investigation, include_graph=True, include_evidence=Tr
         c.setFont("Helvetica-Bold", 16)
         c.drawString(50, 750, f"OSINT Investigation Report")
         
+        # Compute risk level from score
+        risk_score = investigation.risk_score or 0
+        if risk_score >= 75:
+            risk_level = 'CRITICAL'
+        elif risk_score >= 50:
+            risk_level = 'HIGH'
+        elif risk_score >= 25:
+            risk_level = 'MEDIUM'
+        else:
+            risk_level = 'LOW'
+        
         # Case information
         c.setFont("Helvetica", 10)
         c.drawString(50, 720, f"Case ID: {investigation.id}")
         c.drawString(50, 700, f"Target: {investigation.primary_entity}")
-        c.drawString(50, 680, f"Risk Score: {investigation.risk_score} ({investigation.risk_level})")
+        c.drawString(50, 680, f"Risk Score: {risk_score} ({risk_level})")
         
         # Draw some content
         y = 640
@@ -279,16 +306,32 @@ def _build_text_report(investigation):
     report.append("=" * 80)
     report.append("")
     
+    # Compute risk level from score
+    risk_score = investigation.risk_score or 0
+    if risk_score >= 75:
+        risk_level = 'CRITICAL'
+    elif risk_score >= 50:
+        risk_level = 'HIGH'
+    elif risk_score >= 25:
+        risk_level = 'MEDIUM'
+    else:
+        risk_level = 'LOW'
+    
+    # Extract email/phone from findings if available
+    findings_data = investigation.findings_data or {}
+    emails = findings_data.get('emails', [])
+    phones = findings_data.get('phones', [])
+    
     # Case Overview
     report.append("CASE OVERVIEW")
     report.append("-" * 40)
     report.append(f"Case ID: {investigation.id}")
     report.append(f"Target Username: {investigation.primary_entity}")
-    report.append(f"Email: {investigation.email or 'N/A'}")
-    report.append(f"Phone: {investigation.phone or 'N/A'}")
+    report.append(f"Email: {emails[0] if emails else 'N/A'}")
+    report.append(f"Phone: {phones[0] if phones else 'N/A'}")
     report.append(f"Status: {investigation.status}")
-    report.append(f"Risk Score: {investigation.risk_score}")
-    report.append(f"Risk Level: {investigation.risk_level}")
+    report.append(f"Risk Score: {risk_score}")
+    report.append(f"Risk Level: {risk_level}")
     report.append(f"Created: {investigation.created_at}")
     report.append(f"Completed: {investigation.completed_at}")
     report.append("")
