@@ -1,0 +1,50 @@
+INFO:     Started server process [67387]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5000 (Press CTRL+C to quit)
+INFO:database:Case created: 58e21389-ea21-4b09-bcf5-4c8fd872f782 for delete_test
+INFO:__main__:Investigation case created: 58e21389-ea21-4b09-bcf5-4c8fd872f782 for delete_test with filters: {}
+INFO:     127.0.0.1:36240 - "POST /api/investigation/create HTTP/1.1" 200 OK
+INFO:database:Case deleted: 58e21389-ea21-4b09-bcf5-4c8fd872f782
+INFO:     127.0.0.1:36254 - "DELETE /api/investigation/delete/58e21389-ea21-4b09-bcf5-4c8fd872f782 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36262 - "GET /api/investigation/status/58e21389-ea21-4b09-bcf5-4c8fd872f782 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57164 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49440 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36034 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43518 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59810 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47166 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37452 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57488 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46502 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57390 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51922 - "OPTIONS /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51938 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52892 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56754 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56870 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43684 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55078 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45216 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47282 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54194 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33812 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56542 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57640 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53562 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32846 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49998 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39932 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43594 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50414 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45670 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45196 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42012 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42432 - "OPTIONS /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42434 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38838 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52190 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49056 - "OPTIONS /api/investigation/delete/undefined HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49060 - "DELETE /api/investigation/delete/undefined HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47742 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51968 - "GET /api/health HTTP/1.1" 200 OK

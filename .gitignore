@@ -1,4 +1,5 @@
-# Python
+node_modules/
+.cache/# Python
 __pycache__/
 *.pyc
 *.pyo

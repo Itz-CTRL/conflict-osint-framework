@@ -4,7 +4,6 @@ import { THEMES } from '../themes';
 import { api } from '../utils/api';
 import { Card, SectionTitle, Alert, Spinner, EmptyState, DataTable, Pill } from './UI';
 import { useCaseContext } from '../contexts/CaseContext';
-import RiskScore from './RiskScore';
 
 export default function PhoneLookup({ theme }) {
   const t = THEMES[theme];
@@ -42,7 +41,7 @@ export default function PhoneLookup({ theme }) {
           📱 Phone Intelligence
         </h2>
         <p style={{ fontFamily: "'Sora',sans-serif", fontSize: 13, color: t.textMuted, margin: 0 }}>
-          Lookup carrier, country, timezone, social presence and risk score for any phone number.
+          Lookup carrier, country, timezone, and social presence for any phone number.
         </p>
       </div>
 
@@ -244,35 +243,6 @@ function PhoneResult({ data, theme }) {
             </div>
           )}
         </Card>
-
-        {/* Risk Score */}
-        <Card theme={theme} style={{ padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <SectionTitle icon="⚠" title="Risk Score" theme={theme} />
-          <RiskScore score={data.risk_score || 0} theme={theme} />
-
-          <div style={{ marginTop: 16, width: '100%' }}>
-            <RiskFactorBar label="Social Exposure" score={(data.social_presence?.length || 0) * 25} theme={theme} />
-            <RiskFactorBar label="Email Links" score={(data.emails_found?.length || 0) * 20} theme={theme} />
-            <RiskFactorBar label="Base Risk" score={20} theme={theme} />
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function RiskFactorBar({ label, score, theme }) {
-  const t = THEMES[theme];
-  const pct = Math.min(100, score);
-  const color = pct >= 67 ? t.riskHigh : pct >= 34 ? t.riskMed : t.riskLow;
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontFamily: "'Sora',sans-serif", fontSize: 11, color: t.textMuted }}>{label}</span>
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color, fontWeight: 700 }}>{pct}</span>
-      </div>
-      <div style={{ height: 4, background: t.borderLight, borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.6s ease' }} />
       </div>
     </div>
   );
@@ -280,16 +250,13 @@ function RiskFactorBar({ label, score, theme }) {
 
 function HistoryRow({ data, theme, onSelect }) {
   const t = THEMES[theme];
-  const riskColor =
-    (data.risk_score || 0) >= 67 ? t.riskHigh :
-    (data.risk_score || 0) >= 34 ? t.riskMed  : t.riskLow;
 
   return (
     <div
       onClick={onSelect}
       style={{
         display: 'grid',
-        gridTemplateColumns: '1fr auto auto',
+        gridTemplateColumns: '1fr auto',
         gap: 16,
         alignItems: 'center',
         padding: '12px 0',
@@ -305,9 +272,6 @@ function HistoryRow({ data, theme, onSelect }) {
         <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 11, color: t.textMuted, marginTop: 2 }}>
           {data.country} · {data.carrier || '—'}
         </div>
-      </div>
-      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: riskColor, fontWeight: 700 }}>
-        Risk: {data.risk_score || 0}
       </div>
       <span style={{ fontFamily: "'Sora',sans-serif", fontSize: 12, color: t.textMuted }}>→</span>
     </div>

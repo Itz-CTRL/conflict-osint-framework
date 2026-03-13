@@ -6,8 +6,8 @@
 // Validation regex patterns
 export const PATTERNS = {
   EMAIL: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-  PHONE: /^[\d\s\-\+\(\)]{7,20}$/, // Flexible phone format
-  USERNAME: /^[a-zA-Z0-9._\-]{2,30}$/, // 2-30 chars, alphanumeric + . _ -
+  PHONE: /^[\d\s\-+()]{7,20}$/, // Flexible phone format
+  USERNAME: /^[a-zA-Z0-9._-]{2,30}$/, // 2-30 chars, alphanumeric + . _ -
   URL: /^https?:\/\/.+/,
   SPECIAL_CHARS: /[!@#$%^&*(),.?":{}|<>]/g,
 };
@@ -332,7 +332,7 @@ export function generateSearchSummary(formData) {
   return parts.join(' | ');
 }
 
-export default {
+const validationUtils = {
   PATTERNS,
   validateEmail,
   validatePhone,
@@ -349,3 +349,5 @@ export default {
   extractIdentifiers,
   generateSearchSummary,
 };
+
+export default validationUtils;

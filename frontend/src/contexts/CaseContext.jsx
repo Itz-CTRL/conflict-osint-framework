@@ -51,7 +51,12 @@ export function CaseProvider({ children }) {
     try {
       const res = await api.listInvestigations();
       const list = res.data || [];
-      setInvestigations(list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      // Normalize status for badge display: "light_complete" / "deep_complete" -> "completed"
+      const normalized = list.map(inv => ({
+        ...inv,
+        status: inv.status?.includes('complete') ? 'completed' : inv.status
+      }));
+      setInvestigations(normalized.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
     } catch (err) {
       setError(err.message);
       setInvestigations([]);
